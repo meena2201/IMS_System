@@ -1,0 +1,77 @@
+"""
+Database initialization module for setting up the database schema.
+"""
+import sqlite3
+from database_utils import hash_password
+
+
+def initialize_database(db_file='DB_FILE'):
+    """
+    Initialize the database with required tables and views.
+    
+    Args:
+        db_file (str): The database file path.
+    """
+    try:
+        # Connect to SQLite database
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+
+        # Create users table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_name TEXT NOT NULL,
+            face_encoding BLOB NOT NULL,
+            type TEXT DEFAULT 'User'
+        )
+        """)
+
+        # Create product_history table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS product_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id TEXT NOT NULL,
+            product_name TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            user_name TEXT NOT NULL,
+            check_out_time TEXT NOT NULL,
+            check_in_time TEXT
+        )
+        """)
+
+        # Create items table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_name TEXT NOT NULL
+        )
+        """)
+
+        # Create the formatted_items view
+        cursor.execute("""
+        CREATE VIEW IF NOT EXISTS formatted_items AS 
+        SELECT 'slof_' || id AS product_id, product_name
+        FROM items;
+        """)
+
+        # Create logusers table for authentication
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS logusers (
+            username TEXT PRIMARY KEY,
+            password TEXT
+        )
+        """)
+
+        # Insert default admin user if not exists
+        cursor.execute("""
+        INSERT OR IGNORE INTO logusers (username, password)
+        VALUES ('admin', ?)
+        """, (hash_password('admin'),))
+
+        # Commit changes to the database
+        conn.commit()
+        conn.close()
+        
+    except Exception as e:
+        print(f"Database initialization error: {e}")
