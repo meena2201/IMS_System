@@ -3,7 +3,7 @@ QR code utilities module for QR code scanning and processing.
 """
 import cv2
 import time
-from text_utils import text_to_speech
+from .text_utils import text_to_speech
 
 
 def zoom_in_on_qr_code(frame, points, zoom_factor=1.5):

@@ -4,7 +4,7 @@ Login and authentication module.
 import sqlite3
 import tkinter as tk
 from tkinter import messagebox
-from database_utils import hash_password
+from db import hash_password
 
 
 def open_login_page(window, open_admin_window_callback):

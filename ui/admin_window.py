@@ -5,10 +5,10 @@ import sqlite3
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
-from ui_utils import setup_placeholder, resource_path
-from product_management import search_product, show_items_admin
-from user_management_ui import setup_tab2
-from product_manager_ui import setup_tab3
+from utils import setup_placeholder, resource_path
+from core import search_product, show_items_admin
+from .user_management_ui import setup_tab2
+from .product_manager_ui import setup_tab3
 
 
 def open_admin_window(window, db_file='DB_FILE'):

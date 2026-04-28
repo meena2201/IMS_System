@@ -2,7 +2,7 @@
 Database initialization module for setting up the database schema.
 """
 import sqlite3
-from database_utils import hash_password
+from .database_utils import hash_password
 
 
 def initialize_database(db_file='DB_FILE'):

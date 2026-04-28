@@ -6,9 +6,10 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
 import face_recognition
-from database_utils import execute_query, fetch_user_data, update_user_type, remove_user
-from ui_utils import setup_placeholder
-from text_utils import text_to_speech
+from db import execute_query, fetch_user_data, update_user_type, remove_user
+from utils import setup_placeholder, text_to_speech
+from utils import load_known_encodings as get_known_encodings
+from utils import find_matching_face
 
 
 def setup_tab2(parent_window, db_file='DB_FILE'):
@@ -102,10 +103,9 @@ def setup_tab2(parent_window, db_file='DB_FILE'):
 
                         if encodings:
                             face_encoding = encodings[0]
-                            known_encodings = load_known_encodings(db_file=db_file)
+                            known_encodings = get_known_encodings(db_file=db_file)
                             
                             if known_encodings:
-                                from face_recognition_utils import find_matching_face
                                 user_id, existing_user_name = find_matching_face(known_encodings, face_encoding)
                                 if user_id:
                                     message_label.config(text=f"User already exists: ID={user_id}, Name={existing_user_name}", fg="red")
@@ -198,24 +198,3 @@ def setup_tab2(parent_window, db_file='DB_FILE'):
 
     # Initial load of user data
     refresh_user_list()
-
-
-def load_known_encodings(db_file='DB_FILE'):
-    """
-    Load all face encodings from the database into memory.
-    
-    Args:
-        db_file (str): The database file path.
-        
-    Returns:
-        list: List of tuples (user_id, user_name, face_encoding).
-    """
-    import sqlite3
-    conn = sqlite3.connect(db_file)
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT user_id, user_name, face_encoding FROM users")
-    rows = cursor.fetchall()
-    conn.close()
-    
-    return [(row[0], row[1], np.frombuffer(row[2], dtype=np.float64)) for row in rows]

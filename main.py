@@ -7,12 +7,10 @@ import sqlite3
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
-from database_init import initialize_database
-from ui_utils import resource_path
-from product_management import check_product, show_items
-from login import open_login_page
-from admin_window import open_admin_window
-from text_utils import text_to_speech
+from db import initialize_database
+from utils import resource_path, text_to_speech
+from core import check_product, show_items, open_login_page
+from ui import open_admin_window
 
 # Set up environment
 os.environ["QT_QPA_PLATFORM"] = "xcb"
