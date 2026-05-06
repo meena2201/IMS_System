@@ -108,4 +108,11 @@ def open_admin_window(window, db_file='DB_FILE'):
     notebook.add(tab3, text="Product Manager")
     setup_tab3(tab3, db_file=db_file)
 
-    admin_window.mainloop()
+    # Do not start a new mainloop for Toplevel windows; the application's
+    # main `window.mainloop()` should drive the event loop. Starting a
+    # nested mainloop can freeze or prevent other windows from showing.
+    admin_window.focus_force()
+    try:
+        admin_window.attributes('-topmost', True)
+    except Exception:
+        pass

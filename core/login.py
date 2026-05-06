@@ -15,10 +15,46 @@ def open_login_page(window, open_admin_window_callback):
         window (tk.Tk): The parent window.
         open_admin_window_callback (callable): Callback function to open admin window after login.
     """
+    # Ensure parent isn't forced on top so modal can appear above it
+    try:
+        window.attributes('-topmost', False)
+    except Exception:
+        pass
+
+    # write a tiny debug log so we can confirm the function was invoked
+    try:
+        with open('/tmp/login_debug.log', 'a') as f:
+            f.write(f"open_login_page called at {time.time()}\n")
+    except Exception:
+        pass
+
+    print("DEBUG: open_login_page called")
     login_page = tk.Toplevel(window)
+    print("DEBUG: login_page Toplevel created")
     login_page.title("Login")
-    login_page.geometry("300x200")
+    # Configure size and ensure it appears above the parent.
+    width, height = 360, 220
     login_page.resizable(False, False)
+    login_page.transient(window)
+
+    # Force geometry calculations and compute a safe centered position
+    try:
+        window.update_idletasks()
+        screen_w = window.winfo_screenwidth()
+        screen_h = window.winfo_screenheight()
+        x = max(0, (screen_w - width) // 2)
+        y = max(0, (screen_h - height) // 2)
+        login_page.geometry(f"{width}x{height}+{x}+{y}")
+    except Exception:
+        # Fallback: let the window manager decide
+        pass
+
+    login_page.lift()
+    try:
+        # Make it topmost temporarily so it is visible above fullscreen parents
+        login_page.attributes('-topmost', True)
+    except Exception:
+        pass
 
     tk.Label(login_page, text="User name:").pack(pady=5)
     username_entry = tk.Entry(login_page)
@@ -34,7 +70,20 @@ def open_login_page(window, open_admin_window_callback):
     login_page.bind("<Return>", lambda event: verify_login(username_entry, password_entry, login_page, open_admin_window_callback))
 
     login_page.grab_set()
+    login_page.focus_force()
+    # Ensure the dialog stays above the parent while open
+    try:
+        login_page.attributes('-topmost', True)
+    except Exception:
+        pass
+
     window.wait_window(login_page)
+
+    # Restore parent topmost attribute if needed
+    try:
+        window.attributes('-topmost', False)
+    except Exception:
+        pass
 
 
 def verify_login(username_entry, password_entry, login_page, open_admin_window_callback, db_file='DB_FILE'):

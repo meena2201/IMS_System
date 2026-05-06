@@ -3,6 +3,10 @@ QR code utilities module for QR code scanning and processing.
 """
 import cv2
 import time
+import threading
+import queue
+from PIL import Image, ImageTk
+import tkinter as _tk
 from .text_utils import text_to_speech
 
 
@@ -102,12 +106,126 @@ def scan_qr_code():
                 cv2.destroyAllWindows()
                 return product_id
 
-        cv2.imshow("QR Code Scanner", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            cap.release()
-            cv2.destroyAllWindows()
-            return None
+        # Do not call cv2.imshow or cv2.waitKey here; this function may run
+        # in a background thread (called from Tkinter). We only process frames
+        # and return the decoded data. Preview rendering is intentionally
+        # omitted to avoid OpenCV GUI calls from non-main threads.
 
     cap.release()
     cv2.destroyAllWindows()
     return None
+
+
+def scan_qr_code_with_tk_preview(parent, timeout=30):
+    """Scan QR with a Tkinter preview window. Blocks until a QR is found, cancelled, or timeout.
+
+    Returns decoded data or None.
+    """
+    result_q = queue.Queue()
+    stop_event = threading.Event()
+
+    # Create preview window
+    try:
+        top = _tk.Toplevel(parent)
+        top.title("QR Preview")
+        top.geometry("640x480")
+        top.transient(parent)
+        lbl = _tk.Label(top)
+        lbl.pack(fill=_tk.BOTH, expand=True)
+        cancel_btn = _tk.Button(top, text="Cancel", command=lambda: stop_event.set())
+        cancel_btn.pack(side=_tk.BOTTOM)
+        # Ensure closing the window stops the worker
+        top.protocol("WM_DELETE_WINDOW", stop_event.set)
+    except Exception:
+        top = None
+        lbl = None
+
+    def worker():
+        cap = cv2.VideoCapture(0)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 720)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        start_time = time.time()
+        detector = cv2.QRCodeDetector()
+
+        try:
+            while not stop_event.is_set():
+                if time.time() - start_time > timeout:
+                    text_to_speech("QR scan timed out.")
+                    break
+
+                ret, frame = cap.read()
+                if not ret:
+                    text_to_speech("Failed to capture frame")
+                    break
+
+                frame = cv2.flip(frame, 1)
+                data, points, _ = detector.detectAndDecode(frame)
+                if points is not None:
+                    points = points[0]
+                    cv2.polylines(frame, [points.astype(int)], isClosed=True, color=(0, 255, 0), thickness=2)
+                    if data:
+                        result_q.put(data)
+                        break
+
+                # Send preview frame to Tk
+                if lbl is not None:
+                    try:
+                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        im = Image.fromarray(rgb)
+                        imgtk = ImageTk.PhotoImage(image=im)
+                        def _safe_set_image(widget, image):
+                            try:
+                                if widget.winfo_exists():
+                                    widget.imgtk = image
+                                    widget.config(image=image)
+                            except Exception:
+                                pass
+
+                        lbl.after(0, lambda imgtk=imgtk: _safe_set_image(lbl, imgtk))
+                    except Exception:
+                        pass
+
+                time.sleep(0.02)
+
+        finally:
+            try:
+                cap.release()
+            except Exception:
+                pass
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+
+    # Poll for result or stop
+    start = time.time()
+    res = None
+    while True:
+        try:
+            if not result_q.empty():
+                res = result_q.get_nowait()
+                break
+        except Exception:
+            res = None
+
+        if stop_event.is_set():
+            res = None
+            break
+
+        if time.time() - start > timeout:
+            res = None
+            break
+
+        try:
+            parent.update()
+        except Exception:
+            pass
+        time.sleep(0.05)
+
+    # close preview
+    try:
+        if top is not None:
+            top.destroy()
+    except Exception:
+        pass
+
+    return res

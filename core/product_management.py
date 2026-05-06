@@ -131,80 +131,81 @@ def check_product(tree, db_file='DB_FILE'):
         tree (ttk.Treeview): The treeview to update with product info.
         db_file (str): The database file path.
     """
-    # Run QR scanning in a separate thread to avoid GIL issues with Tkinter
-    def scan_and_process():
+    # Launch QR scanner with Tk preview (keeps UI responsive while scanning).
+    parent = tree.winfo_toplevel()
+    try:
+        from utils.qr_utils import scan_qr_code_with_tk_preview
+        product_id = scan_qr_code_with_tk_preview(parent, timeout=30)
+    except Exception:
+        # Fallback to headless scanner
         product_id = scan_qr_code()
 
-        if product_id is None:
-            return
-        else:
-            product_id = product_id.strip()
+    if product_id is None:
+        return
 
-            try:
-                with sqlite3.connect(db_file) as conn:
-                    cursor = conn.cursor()
+    product_id = product_id.strip()
 
-                    cursor.execute("SELECT product_id, product_name FROM formatted_items WHERE product_id = ?", (product_id,))
-                    result = cursor.fetchone()
+    try:
+        with sqlite3.connect(db_file) as conn:
+            cursor = conn.cursor()
 
-                    if result:
-                        product_name = result[1]
-                        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cursor.execute("SELECT product_id, product_name FROM formatted_items WHERE product_id = ?", (product_id,))
+            result = cursor.fetchone()
 
-                        cursor.execute("SELECT * FROM product_history WHERE product_id = ? AND check_in_time IS NULL", (product_id,))
-                        checked_out_record = cursor.fetchone()
+            if result:
+                product_name = result[1]
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                        if checked_out_record:
-                            check_out_time = checked_out_record[5]
-                            user_id = checked_out_record[3]
-                            user_name = checked_out_record[4]
+                cursor.execute("SELECT * FROM product_history WHERE product_id = ? AND check_in_time IS NULL", (product_id,))
+                checked_out_record = cursor.fetchone()
 
-                            cursor.execute("""UPDATE product_history 
-                                            SET check_in_time = ? 
-                                            WHERE product_id = ? AND check_in_time IS NULL""",
-                                        (current_time, product_id))
-                            conn.commit()
+                if checked_out_record:
+                    check_out_time = checked_out_record[5]
+                    user_id = checked_out_record[3]
+                    user_name = checked_out_record[4]
 
-                            # Update TreeView: refresh items
-                            tree.delete(*tree.get_children())
-                            show_items(tree, db_file=db_file)
+                    cursor.execute("""UPDATE product_history 
+                                    SET check_in_time = ? 
+                                    WHERE product_id = ? AND check_in_time IS NULL""",
+                                (current_time, product_id))
+                    conn.commit()
 
-                            text = f"Checked in successfully: {product_id}"
-                            text_to_speech(text)
+                    # Update TreeView: refresh items
+                    tree.delete(*tree.get_children())
+                    show_items(tree, db_file=db_file)
 
-                        else:
-                            user_id, user_name = recognize_user(db_file=db_file)
+                    text = f"Checked in successfully: {product_id}"
+                    text_to_speech(text)
 
-                            if user_id == 0:
-                                text = "Unknown user, please contact the administrator."
-                                text_to_speech(text)
-                                return
-                            elif user_id is None:
-                                text = "Operation cancelled."
-                                text_to_speech(text)
-                                return
-                            else:
-                                cursor.execute("""INSERT INTO product_history (product_id, product_name, user_id, user_name, check_out_time, check_in_time)
-                                            VALUES (?, ?, ?, ?, ?, NULL)""", (product_id, product_name, user_id, user_name, current_time))
-                                conn.commit()
+                else:
+                    user_id, user_name = recognize_user(db_file=db_file)
 
-                                # Update TreeView after check-out
-                                tree.delete(*tree.get_children())
-                                show_items(tree, db_file=db_file)
-
-                                text = f"Checked out successfully: {product_id}"
-                                text_to_speech(text)
-
+                    if user_id == 0:
+                        text = "Unknown user, please contact the administrator."
+                        text_to_speech(text)
+                        return
+                    elif user_id is None:
+                        text = "Operation cancelled."
+                        text_to_speech(text)
+                        return
                     else:
-                        text = "Invalid QR code"
+                        cursor.execute("""INSERT INTO product_history (product_id, product_name, user_id, user_name, check_out_time, check_in_time)
+                                    VALUES (?, ?, ?, ?, ?, NULL)""", (product_id, product_name, user_id, user_name, current_time))
+                        conn.commit()
+
+                        # Update TreeView after check-out
+                        tree.delete(*tree.get_children())
+                        show_items(tree, db_file=db_file)
+
+                        text = f"Checked out successfully: {product_id}"
                         text_to_speech(text)
 
-            except sqlite3.Error as e:
-                text = f"Database error: {e}"
+            else:
+                text = "Invalid QR code"
                 text_to_speech(text)
 
-    # Start scanning in a daemon thread
-    thread = threading.Thread(target=scan_and_process, daemon=True)
-    thread.start()
+    except sqlite3.Error as e:
+        text = f"Database error: {e}"
+        text_to_speech(text)
 
 
