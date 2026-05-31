@@ -22,8 +22,18 @@ def initialize_database(db_file='DB_FILE'):
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_name TEXT NOT NULL,
-            face_encoding BLOB NOT NULL,
+            face_encoding BLOB,
             type TEXT DEFAULT 'User'
+        )
+        """)
+
+        # Create face_encodings table for multiple patterns per user
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS face_encodings (
+            encoding_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            face_encoding BLOB NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
         )
         """)
 

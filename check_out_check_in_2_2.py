@@ -1002,12 +1002,26 @@ def resource_path(relative_path):
 
 # Load All Encodings into Memory
 def load_known_encodings():
-    rows = execute_query("SELECT user_id, user_name, face_encoding FROM users", fetch=True)
+    try:
+        rows = execute_query(
+            """
+            SELECT u.user_id, u.user_name, f.face_encoding
+            FROM users u
+            JOIN face_encodings f ON u.user_id = f.user_id
+            UNION ALL
+            SELECT user_id, user_name, face_encoding
+            FROM users
+            WHERE face_encoding IS NOT NULL
+            """,
+            fetch=True,
+        )
+    except sqlite3.OperationalError:
+        rows = execute_query("SELECT user_id, user_name, face_encoding FROM users", fetch=True)
     return [(row[0], row[1], np.frombuffer(row[2], dtype=np.float64)) for row in rows]
 
 def find_matching_face(known_encodings, test_encoding, tolerance=0.35):
     # Ensure the encoding is valid
-    if test_encoding is None or len(test_encoding) == 0:  
+    if test_encoding is None or len(test_encoding) == 0:
         return None, None
     
     # Calculate the distances between the test encoding and known encodings

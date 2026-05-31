@@ -60,6 +60,7 @@ def remove_user(user_id, db_file='DB_FILE'):
         user_id (int): The user ID to remove.
         db_file (str): The database file path.
     """
+    execute_query("DELETE FROM face_encodings WHERE user_id = ?", (user_id,), db_file=db_file)
     execute_query("DELETE FROM users WHERE user_id = ?", (user_id,), db_file=db_file)
 
 

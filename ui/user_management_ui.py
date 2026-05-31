@@ -2,6 +2,7 @@
 User management UI module for managing users in the admin panel.
 """
 import cv2
+import sqlite3
 import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
@@ -36,12 +37,25 @@ def setup_tab2(parent_window, db_file='DB_FILE'):
     name_entry.bind("<Return>", lambda event: add_user())
     setup_placeholder(name_entry)
 
-    # Load Haar Cascade for face and eye detection
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+    _add_user_win = "Add User - Press 'Space' to confirm, 'q' to cancel"
+
+    def _opencv_window_to_front(title):
+        cv2.namedWindow(title, cv2.WINDOW_NORMAL)
+        try:
+            cv2.setWindowProperty(title, cv2.WND_PROP_TOPMOST, 1)
+        except (cv2.error, AttributeError):
+            pass
+
+    def _largest_face_location(locations):
+        if not locations:
+            return None
+        return max(
+            locations,
+            key=lambda loc: (loc[2] - loc[0]) * (loc[1] - loc[3]),
+        )
 
     def add_user():
-        """Add a new user with face recognition."""
+        """Add a new user with face recognition using multiple face patterns."""
         import time
         user_name = name_entry.get().strip()
         if not user_name:
@@ -49,14 +63,17 @@ def setup_tab2(parent_window, db_file='DB_FILE'):
             return
 
         cap = cv2.VideoCapture(0)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         start_time = time.time()
-        face_detected = False
+        captured_encodings = []
+        sample_target = 4
+        _opencv_window_to_front(_add_user_win)
 
         try:
             while True:
-                # Check for timeout (30 seconds)
-                if time.time() - start_time > 30:
-                    message_label.config(text="No face detected. Operation cancelled.", fg="red")
+                if time.time() - start_time > 60:
+                    message_label.config(text="Timed out while capturing face samples.", fg="red")
                     break
 
                 ret, frame = cap.read()
@@ -65,27 +82,16 @@ def setup_tab2(parent_window, db_file='DB_FILE'):
                     break
 
                 frame = cv2.flip(frame, 1)
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                face_locations = face_recognition.face_locations(rgb_frame, model="hog")
+                face_detected = len(face_locations) > 0
 
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+                for (top, right, bottom, left) in face_locations:
+                    cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
 
-                if len(faces) > 0:
-                    face_detected = True
-                else:
-                    face_detected = False
-
-                for (x, y, w, h) in faces:
-                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                    face_region = gray[y:y + h, x:x + w]
-                    eyes = eye_cascade.detectMultiScale(face_region)
-                    if len(eyes) > 0:
-                        cv2.putText(frame, "", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-                        cv2.imshow("Add User - Press 'Space' to confirm", frame)
-                    else:
-                        cv2.imshow("Add User - Press 'Space' to confirm", frame)
-                
-                if len(faces) == 0:
-                    cv2.imshow("Add User - Press 'Space' to confirm", frame)
+                prompt_text = f"Press SPACE to capture sample {len(captured_encodings)+1}/{sample_target} or 'q' to cancel"
+                cv2.putText(frame, prompt_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                cv2.imshow(_add_user_win, frame)
 
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
@@ -95,27 +101,52 @@ def setup_tab2(parent_window, db_file='DB_FILE'):
                     if not face_detected:
                         message_label.config(text="No face detected. Please try again.", fg="red")
                         continue
-                    
-                    for (x, y, w, h) in faces:
-                        face_image = frame[y:y + h, x:x + w]
-                        rgb_face_image = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
-                        encodings = face_recognition.face_encodings(rgb_face_image)
 
-                        if encodings:
-                            face_encoding = encodings[0]
-                            known_encodings = get_known_encodings(db_file=db_file)
-                            
-                            if known_encodings:
-                                user_id, existing_user_name = find_matching_face(known_encodings, face_encoding)
-                                if user_id:
-                                    message_label.config(text=f"User already exists: ID={user_id}, Name={existing_user_name}", fg="red")
-                                    return
-                            
-                            execute_query("INSERT INTO users (user_name, face_encoding) VALUES (?, ?)",
-                                        (user_name, face_encoding.tobytes()), db_file=db_file)
-                            message_label.config(text=f"User '{user_name}' added successfully!", fg="green")
-                            refresh_user_list()
-                            return
+                    largest = _largest_face_location(face_locations)
+                    encodings = face_recognition.face_encodings(rgb_frame, [largest], num_jitters=2)
+
+                    if not encodings:
+                        message_label.config(
+                            text="Could not read face clearly. Improve lighting and fill the frame.",
+                            fg="red",
+                        )
+                        continue
+
+                    captured_encodings.append(encodings[0])
+                    message_label.config(
+                        text=f"Captured sample {len(captured_encodings)}/{sample_target}",
+                        fg="green",
+                    )
+
+                    if len(captured_encodings) < sample_target:
+                        continue
+
+                    known_encodings = get_known_encodings(db_file=db_file)
+                    if known_encodings:
+                        for face_encoding in captured_encodings:
+                            user_id, existing_user_name = find_matching_face(known_encodings, face_encoding)
+                            if user_id:
+                                message_label.config(
+                                    text=f"User already exists: ID={user_id}, Name={existing_user_name}",
+                                    fg="red",
+                                )
+                                return
+
+                    conn = sqlite3.connect(db_file)
+                    cursor = conn.cursor()
+                    cursor.execute("INSERT INTO users (user_name) VALUES (?)", (user_name,))
+                    user_id = cursor.lastrowid
+                    for face_encoding in captured_encodings:
+                        cursor.execute(
+                            "INSERT INTO face_encodings (user_id, face_encoding) VALUES (?, ?)",
+                            (user_id, face_encoding.tobytes()),
+                        )
+                    conn.commit()
+                    conn.close()
+
+                    message_label.config(text=f"User '{user_name}' added successfully!", fg="green")
+                    refresh_user_list()
+                    return
         finally:
             cap.release()
             cv2.destroyAllWindows()

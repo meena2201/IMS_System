@@ -15,11 +15,25 @@ import faiss
 # -------------------------------
 # 🔹 Load Encodings from Database
 # -------------------------------
-def _load_known_encodings_faiss(db_file='face_db.sqlite'):
+def _load_known_encodings_faiss(db_file='DB_FILE'):
     conn = sqlite3.connect(db_file)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT user_id, user_name, face_encoding FROM users")
+    try:
+        cursor.execute(
+            """
+            SELECT u.user_id, u.user_name, f.face_encoding
+            FROM users u
+            JOIN face_encodings f ON u.user_id = f.user_id
+            UNION ALL
+            SELECT user_id, user_name, face_encoding
+            FROM users
+            WHERE face_encoding IS NOT NULL
+            """
+        )
+    except sqlite3.OperationalError:
+        cursor.execute("SELECT user_id, user_name, face_encoding FROM users")
+
     rows = cursor.fetchall()
     conn.close()
 
@@ -139,12 +153,9 @@ def _recognize_user_faiss(timeout=30, db_file='face_db.sqlite', threshold=0.5, v
                         return 'CANCELLED', None
                 continue
 
-            # Preprocess for better accuracy
-            rgb_frame = preprocess_frame(frame)
-
-            # Detect faces
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             face_locations = face_recognition.face_locations(rgb_frame, model="hog")
-            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations, num_jitters=2)
 
             for face_encoding in face_encodings:
                 user_id, user_name = find_matching_face_faiss(index, labels, face_encoding, threshold=threshold)
@@ -192,9 +203,8 @@ def load_known_encodings(db_file='DB_FILE'):
     return results
 
 
-def find_matching_face(known_encodings, test_encoding, tolerance=0.35):
+def find_matching_face(known_encodings, test_encoding, tolerance=0.55):
     """Legacy matching function: uses FAISS when available, falls back to face_distance."""
-    # known_encodings: list of (user_id, user_name, encoding)
     if test_encoding is None or len(test_encoding) == 0:
         return None, None
 
@@ -203,13 +213,17 @@ def find_matching_face(known_encodings, test_encoding, tolerance=0.35):
 
     try:
         embeddings = np.array([enc[2] for enc in known_encodings]).astype('float32')
-        labels = [ (enc[0], enc[1]) for enc in known_encodings ]
+        labels = [(enc[0], enc[1]) for enc in known_encodings]
         index = build_faiss_index(embeddings)
-        uid_name = find_matching_face_faiss(index, labels, test_encoding.astype('float32'), threshold=tolerance)
+        uid_name = find_matching_face_faiss(
+            index,
+            labels,
+            test_encoding.astype('float32'),
+            threshold=tolerance,
+        )
         if uid_name is not None:
             return uid_name
     except Exception:
-        # fallback to simple distance computation
         distances = face_recognition.face_distance([enc[2] for enc in known_encodings], test_encoding)
         if len(distances) == 0:
             return None, None
@@ -225,7 +239,7 @@ def recognize_user(timeout=30, db_file='DB_FILE'):
 
     Returns (user_id, user_name) if recognized, (0, None) if unknown, (None, None) if cancelled.
     """
-    result = _recognize_user_faiss(timeout=timeout, db_file=db_file)
+    result = _recognize_user_faiss(timeout=timeout, db_file=db_file, threshold=0.55)
     if isinstance(result, tuple):
         if result[0] == 'CANCELLED':
             return None, None
