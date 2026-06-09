@@ -2,14 +2,25 @@
 FAISS-based Face Recognition Module
 Fast and scalable face matching using FAISS
 """
+import os
+import sys
+import warnings
+
+# Suppress warnings and OpenCV output
+warnings.filterwarnings("ignore")
+os.environ['OPENCV_LOG_LEVEL'] = 'SILENT'
 
 import cv2
 import numpy as np
 import face_recognition
 import sqlite3
 import time
+import pickle
 from collections import Counter
 import faiss
+
+# Camera device index: 0 = built-in, 1+ = external/USB cameras
+CAMERA_DEVICE_INDEX = 1
 
 
 # -------------------------------
@@ -41,14 +52,26 @@ def _load_known_encodings_faiss(db_file='DB_FILE'):
     labels = []
 
     for row in rows:
-        encoding = np.frombuffer(row[2], dtype=np.float64)
+        try:
+            # Unpickle the encoding data from database
+            encoding = pickle.loads(row[2])
+            
+            # Convert to numpy array if needed
+            if not isinstance(encoding, np.ndarray):
+                encoding = np.array(encoding)
+            
+            # Ensure it's float32 for FAISS
+            encoding = encoding.astype(np.float32)
 
-        # Safety check
-        if encoding.shape[0] != 128:
+            # Safety check - face_recognition encodings are 128-dimensional
+            if encoding.shape[0] != 128:
+                continue
+
+            encodings.append(encoding)
+            labels.append((row[0], row[1]))
+        except (pickle.UnpicklingError, ValueError, TypeError):
+            # Skip corrupted entries
             continue
-
-        encodings.append(encoding)
-        labels.append((row[0], row[1]))
 
     if len(encodings) == 0:
         return np.array([]), []
@@ -120,7 +143,7 @@ def _recognize_user_faiss(timeout=30, db_file='face_db.sqlite', threshold=0.5, v
 
     index = build_faiss_index(embeddings)
 
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(CAMERA_DEVICE_INDEX)
 
     # Improve camera quality
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)

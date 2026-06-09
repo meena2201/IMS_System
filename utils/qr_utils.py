@@ -1,6 +1,14 @@
 """
 QR code utilities module for QR code scanning and processing.
 """
+import os
+import sys
+import warnings
+
+# Suppress warnings and OpenCV output
+warnings.filterwarnings("ignore")
+os.environ['OPENCV_LOG_LEVEL'] = 'SILENT'
+
 import cv2
 import time
 import threading
@@ -8,6 +16,9 @@ import queue
 from PIL import Image, ImageTk
 import tkinter as _tk
 from .text_utils import text_to_speech
+
+# Camera device index: 0 = built-in, 1+ = external/USB cameras
+CAMERA_DEVICE_INDEX = 1
 
 
 def zoom_in_on_qr_code(frame, points, zoom_factor=1.5):
@@ -65,7 +76,7 @@ def scan_qr_code():
     Returns:
         str or None: The decoded QR code data, or None if not found/cancelled.
     """
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(CAMERA_DEVICE_INDEX)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 720)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
@@ -141,7 +152,7 @@ def scan_qr_code_with_tk_preview(parent, timeout=30):
         lbl = None
 
     def worker():
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(CAMERA_DEVICE_INDEX)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 720)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         start_time = time.time()

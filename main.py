@@ -4,6 +4,11 @@ Main application module for inventory management check-in/check-out system.
 import os
 import sys
 import sqlite3
+import warnings
+
+# Suppress deprecation warnings from external libraries
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk

@@ -1,6 +1,14 @@
 """
 User management UI module for managing users in the admin panel.
 """
+import os
+import sys
+import warnings
+
+# Suppress warnings and OpenCV output
+warnings.filterwarnings("ignore")
+os.environ['OPENCV_LOG_LEVEL'] = 'SILENT'
+
 import cv2
 import sqlite3
 import tkinter as tk
@@ -11,6 +19,9 @@ from db import execute_query, fetch_user_data, update_user_type, remove_user
 from utils import setup_placeholder, text_to_speech
 from utils import load_known_encodings as get_known_encodings
 from utils import find_matching_face
+
+# Camera device index: 0 = built-in, 1+ = external/USB cameras
+CAMERA_DEVICE_INDEX = 1
 
 
 def setup_tab2(parent_window, db_file='DB_FILE'):
@@ -62,7 +73,7 @@ def setup_tab2(parent_window, db_file='DB_FILE'):
             message_label.config(text="Please enter the Name", fg="red")
             return
 
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(CAMERA_DEVICE_INDEX)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         start_time = time.time()

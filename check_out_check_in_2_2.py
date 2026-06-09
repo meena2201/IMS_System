@@ -14,6 +14,9 @@ import os
 import time
 os.environ["QT_QPA_PLATFORM"] = "xcb"
 
+# Camera device index: 0 = built-in, 1+ = external/USB cameras
+CAMERA_DEVICE_INDEX = 1
+
 def text_to_speech(text):
     os.system(f'pico2wave -w output.wav "{text}" && aplay output.wav')
 
@@ -275,7 +278,7 @@ def setp_tab2(parent_window):
                 message_label.config(text="Please enter the Name", fg="red")
                 return
 
-            cap = cv2.VideoCapture(0)
+            cap = cv2.VideoCapture(CAMERA_DEVICE_INDEX)
             start_time = time.time()
             face_detected = False
 
@@ -942,7 +945,7 @@ def scan_qr_code():
     - The camera frame is mirrored (horizontal flip) for user-friendly preview.
     """
     import time
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(CAMERA_DEVICE_INDEX)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 720)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
@@ -1083,7 +1086,7 @@ def find_matching_face(known_encodings, test_encoding, tolerance=0.35):
 # Recognize User
 def recognize_user():
     known_encodings = load_known_encodings()
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(CAMERA_DEVICE_INDEX)
 
     frame_skip = 3
     frame_counter = 0
