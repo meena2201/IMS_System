@@ -28,11 +28,14 @@ from core import show_items, show_items_admin, search_product
 warnings.filterwarnings("ignore")
 
 DB_FILE = "DB_FILE"
-CAMERA_INDEX = 1          # 0 = built-in, 1 = external/USB
+CAMERA_INDEX = 1          # default: prefer USB webcam (index 1)
 PREVIEW_W, PREVIEW_H = 400, 300   # inline camera preview size
 
 # On Windows use DirectShow backend (faster open, avoids MSMF hangs)
 _CAM_BACKEND = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
+
+# Runtime-selected camera index (changed via admin camera selector)
+_active_camera_index = CAMERA_INDEX
 
 
 def _open_camera(index):
@@ -41,6 +44,34 @@ def _open_camera(index):
     if not cap.isOpened() and index != 0:
         cap = cv2.VideoCapture(0, _CAM_BACKEND)
     return cap
+
+
+def _detect_cameras(max_test=5):
+    """
+    Return list of (index, label) for all cameras found.
+    Prefers USB cameras (higher indices) by listing them first.
+    """
+    found = []
+    for i in range(max_test):
+        cap = cv2.VideoCapture(i, _CAM_BACKEND)
+        if cap.isOpened():
+            found.append(i)
+            cap.release()
+
+    if not found:
+        return [(0, "Camera 0 (default)")]
+
+    labels = []
+    for i in found:
+        if i == 0:
+            label = f"Camera {i} (Built-in)"
+        else:
+            label = f"Camera {i} (USB Webcam)"
+        labels.append((i, label))
+
+    # Put USB cameras first (higher index = likely USB)
+    labels.sort(key=lambda x: -x[0])
+    return labels
 
 # ─── Themes ──────────────────────────────────────────────────────────────────
 
@@ -546,7 +577,7 @@ class HomePage(Page):
         self._cancel_btn.config(state=tk.NORMAL)
         self._status.config(text="Point the QR code at the camera…", fg="#2980b9")
         # Start one long-lived camera thread; we'll swap the process fn for face mode
-        self._cam_thread = _CameraThread(CAMERA_INDEX, self._qr_process, process_every=2)
+        self._cam_thread = _CameraThread(_active_camera_index, self._qr_process, process_every=2)
         self._cam_thread.start()
         self._render_loop_active = True
         self._render_loop()
@@ -1081,7 +1112,7 @@ class UserManagementPage(Page):
         self._cancel_btn.config(state=tk.NORMAL)
         self._status.config(text="Click 'Capture Sample' (or press Space) when your face is visible.",
                              fg="#2980b9")
-        self._cam_thread = _CameraThread(CAMERA_INDEX, self._face_process, process_every=3)
+        self._cam_thread = _CameraThread(_active_camera_index, self._face_process, process_every=3)
         self._cam_thread.start()
         self._render_loop()
 
@@ -1449,6 +1480,12 @@ class UserManagementPage(Page):
             self._register_btn.config(state=tk.DISABLED)
         if msg:
             self._status.config(text=msg, fg="red")
+
+    def _restart_camera(self):
+        """Called when admin changes the camera selection mid-session."""
+        if self._running:
+            self._stop_camera(reset_register=False)
+            self.after(300, self._start_camera)
 
     # ── user list ──
 
@@ -1876,6 +1913,25 @@ class InventoryApp(tk.Tk):
         self._theme_cb.pack(side="left", padx=4)
         self._theme_cb.bind("<<ComboboxSelected>>", self._on_theme_change)
 
+        # ── Camera selector (admin topbar) ────────────────────
+        cam_frame = tk.Frame(self._topbar, bg=t["sidebar_bg"])
+        cam_frame.pack(side="right", padx=12)
+        tk.Label(cam_frame, text="📷 Camera:", bg=t["sidebar_bg"],
+                 fg=t["sidebar_fg"], font=("Arial", 9)).pack(side="left")
+
+        self._cam_labels = _detect_cameras()   # [(index, label), ...]
+        # Default: USB webcam (highest index) is first after sort
+        default_cam = self._cam_labels[0]
+        global _active_camera_index
+        _active_camera_index = default_cam[0]
+
+        self._cam_var = tk.StringVar(value=default_cam[1])
+        self._cam_cb  = ttk.Combobox(cam_frame, textvariable=self._cam_var,
+                                      values=[lbl for _, lbl in self._cam_labels],
+                                      state="readonly", width=18, font=("Arial", 9))
+        self._cam_cb.pack(side="left", padx=4)
+        self._cam_cb.bind("<<ComboboxSelected>>", self._on_camera_change)
+
         self._content = tk.Frame(right_col, bg=t["content_bg"])
         self._content.pack(side="left", fill="both", expand=True)
 
@@ -1920,6 +1976,24 @@ class InventoryApp(tk.Tk):
                 page.config(bg=t["content_bg"])
             except Exception:
                 pass
+
+    def _on_camera_change(self, _event=None):
+        global _active_camera_index
+        selected_label = self._cam_var.get()
+        for idx, lbl in self._cam_labels:
+            if lbl == selected_label:
+                _active_camera_index = idx
+                break
+        # Restart camera on any active page that uses it
+        for page in self._pages.values():
+            if hasattr(page, '_cam_thread') and page._cam_thread is not None:
+                page._cam_thread.stop()
+                page._cam_thread = None
+        # If currently on home or user_management, restart camera immediately
+        if self._current is self._pages.get("home"):
+            self._pages["home"].on_show()
+        elif self._current is self._pages.get("user_management"):
+            self._pages["user_management"]._restart_camera()
 
     def _add_page(self, name: str, page: Page):
         self._pages[name] = page
