@@ -22,6 +22,7 @@ sudo apt-get install -y \
     python3.11 \
     python3.11-venv \
     python3.11-dev \
+    python3.11-tk \
     python3-pip \
     libzbar0 \
     libgl1-mesa-glx \
@@ -30,7 +31,9 @@ sudo apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgtk-3-dev \
+    tk-dev \
     espeak \
+    espeak-ng \
     ffmpeg \
     v4l-utils \
     git
@@ -62,7 +65,8 @@ pip install \
     scipy==1.17.1 \
     Pillow==12.2.0 \
     pyzbar==0.1.9 \
-    pyttsx3
+    pyttsx3 \
+    pyaudio
 
 echo "  Python packages installed."
 
