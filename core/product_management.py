@@ -69,10 +69,12 @@ def show_items_admin(tree, db_file='DB_FILE'):
         conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
         
-        cursor.execute(""" 
-            SELECT product_id, product_name, check_out_time, check_in_time, user_id, user_name 
-            FROM product_history 
-            ORDER BY check_out_time DESC
+        cursor.execute("""
+            SELECT ph.product_id, ph.product_name, ph.check_out_time, ph.check_in_time,
+                   ph.user_id, COALESCE(u.user_name, ph.user_name) AS user_name
+            FROM product_history ph
+            LEFT JOIN users u ON ph.user_id = u.user_id
+            ORDER BY ph.check_out_time DESC
         """)
         items = cursor.fetchall()
         conn.close()
@@ -101,10 +103,13 @@ def show_items(tree, db_file='DB_FILE'):
 
         # SQL query to filter data by today's date
         query = """
-        SELECT product_id, product_name, user_id, user_name, check_out_time, check_in_time
-        FROM product_history
-        WHERE DATE(check_out_time) = ?
-        ORDER BY check_out_time DESC
+        SELECT ph.product_id, ph.product_name, ph.user_id,
+               COALESCE(u.user_name, ph.user_name) AS user_name,
+               ph.check_out_time, ph.check_in_time
+        FROM product_history ph
+        LEFT JOIN users u ON ph.user_id = u.user_id
+        WHERE DATE(ph.check_out_time) = ?
+        ORDER BY ph.check_out_time DESC
         """
 
         cursor.execute(query, (today_date,))

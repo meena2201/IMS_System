@@ -1,38 +1,94 @@
 """
-FAISS-based Face Recognition Module
-Fast and scalable face matching using FAISS
+InsightFace + FAISS face recognition module.
+
+Model  : buffalo_sc  (det_500m + w600k_mbf / ArcFace / MobileFaceNet)
+Vectors: 512-dim, L2-normalised by the model
+Index  : FAISS IndexFlatIP  (inner product = cosine similarity on unit vectors)
+Match  : IP > VERIFY_THRESHOLD  (higher = stricter)
 """
 import os
-import sys
 import warnings
+import threading
+import sqlite3
+import pickle
+import numpy as np
 
-# Suppress warnings and OpenCV output
 warnings.filterwarnings("ignore")
 os.environ['OPENCV_LOG_LEVEL'] = 'SILENT'
 
 import cv2
-import numpy as np
-import face_recognition
-import sqlite3
-import time
-import pickle
-from collections import Counter
 import faiss
 
-# Camera device index: 0 = built-in, 1+ = external/USB cameras
-CAMERA_DEVICE_INDEX = 1
+# ── InsightFace singleton ────────────────────────────────────────────────────
+
+_insight_lock = threading.Lock()
+_insight_app  = None
+
+def _get_insight_app():
+    global _insight_app
+    with _insight_lock:
+        if _insight_app is None:
+            from insightface.app import FaceAnalysis
+            app = FaceAnalysis(
+                name='buffalo_sc',
+                providers=['CPUExecutionProvider']
+            )
+            app.prepare(ctx_id=0, det_size=(320, 320))
+            _insight_app = app
+        return _insight_app
 
 
-# -------------------------------
-# 🔹 Load Encodings from Database
-# -------------------------------
+# ── Face detection helpers ───────────────────────────────────────────────────
+
+def detect_faces(bgr_frame):
+    """Return list of InsightFace face objects sorted largest-first."""
+    app   = _get_insight_app()
+    faces = app.get(bgr_frame)
+    if not faces:
+        return []
+    # Sort by bbox area descending
+    faces.sort(key=lambda f: (f.bbox[2]-f.bbox[0])*(f.bbox[3]-f.bbox[1]), reverse=True)
+    return faces
+
+
+def faces_to_locations(faces):
+    """Convert InsightFace bboxes → (top, right, bottom, left) tuples."""
+    locs = []
+    for f in faces:
+        x1, y1, x2, y2 = [int(v) for v in f.bbox]
+        locs.append((y1, x2, y2, x1))   # face_recognition convention
+    return locs
+
+
+def get_face_embedding(face):
+    """Return L2-normalised 512-dim embedding from an InsightFace face object."""
+    emb = np.array(face.embedding, dtype=np.float32)
+    norm = np.linalg.norm(emb)
+    if norm > 0:
+        emb = emb / norm
+    return emb
+
+
+# ── Database loading ─────────────────────────────────────────────────────────
+
+# Cosine similarity threshold for a VALID match (higher = stricter).
+# ArcFace embeddings: same person typically > 0.35, different person < 0.25.
+VERIFY_THRESHOLD = 0.40   # verification (check-in/out) — strict
+ENROLL_THRESHOLD = 0.38   # dedup during registration — slightly looser
+
+EMBEDDING_DIM = 512
+
+
 def _load_known_encodings_faiss(db_file='DB_FILE'):
-    conn = sqlite3.connect(db_file)
+    """
+    Load InsightFace (512-dim) encodings from the DB and return ONE mean
+    embedding per user.  Dlib 128-dim legacy encodings are silently skipped.
+    """
+    conn   = sqlite3.connect(db_file)
     cursor = conn.cursor()
 
     try:
-        cursor.execute(
-            """
+        cursor.execute("""
             SELECT u.user_id, u.user_name, f.face_encoding
             FROM users u
             JOIN face_encodings f ON u.user_id = f.user_id
@@ -40,247 +96,109 @@ def _load_known_encodings_faiss(db_file='DB_FILE'):
             SELECT user_id, user_name, face_encoding
             FROM users
             WHERE face_encoding IS NOT NULL
-            """
-        )
+        """)
     except sqlite3.OperationalError:
         cursor.execute("SELECT user_id, user_name, face_encoding FROM users")
 
     rows = cursor.fetchall()
     conn.close()
 
-    encodings = []
-    labels = []
+    from collections import defaultdict
+    user_info = {}
+    user_encs = defaultdict(list)
 
-    for row in rows:
+    for uid, uname, blob in rows:
+        if blob is None:
+            continue
         try:
-            # Unpickle the encoding data from database
-            encoding = pickle.loads(row[2])
-            
-            # Convert to numpy array if needed
-            if not isinstance(encoding, np.ndarray):
-                encoding = np.array(encoding)
-            
-            # Ensure it's float32 for FAISS
-            encoding = encoding.astype(np.float32)
-
-            # Safety check - face_recognition encodings are 128-dimensional
-            if encoding.shape[0] != 128:
-                continue
-
-            encodings.append(encoding)
-            labels.append((row[0], row[1]))
-        except (pickle.UnpicklingError, ValueError, TypeError):
-            # Skip corrupted entries
+            try:
+                enc = pickle.loads(blob)
+            except Exception:
+                enc = np.frombuffer(blob, dtype=np.float64)
+            enc = np.array(enc, dtype=np.float32)
+            if enc.shape[0] != EMBEDDING_DIM:
+                continue          # skip legacy 128-dim dlib encodings
+            norm = np.linalg.norm(enc)
+            if norm > 0:
+                enc = enc / norm
+            user_encs[uid].append(enc)
+            user_info[uid] = uname
+        except Exception:
             continue
 
-    if len(encodings) == 0:
+    if not user_encs:
         return np.array([]), []
 
-    return np.array(encodings).astype('float32'), labels
+    encodings, labels = [], []
+    for uid, encs in user_encs.items():
+        mean_enc = np.mean(encs, axis=0).astype(np.float32)
+        norm = np.linalg.norm(mean_enc)
+        if norm > 0:
+            mean_enc = mean_enc / norm
+        encodings.append(mean_enc)
+        labels.append((uid, user_info[uid]))
+
+    return np.array(encodings, dtype=np.float32), labels
 
 
-# -------------------------------
-# 🔹 Build FAISS Index
-# -------------------------------
+# ── FAISS index (cosine / inner product) ────────────────────────────────────
+
 def build_faiss_index(embeddings):
-    dimension = embeddings.shape[1]  # should be 128
-
-    index = faiss.IndexFlatL2(dimension)
+    """Build a FAISS IndexFlatIP for cosine similarity on unit vectors."""
+    dim   = embeddings.shape[1]
+    index = faiss.IndexFlatIP(dim)
     index.add(embeddings)
-
     return index
 
 
-# -------------------------------
-# 🔹 Match Face using FAISS
-# -------------------------------
-def find_matching_face_faiss(index, labels, test_encoding, threshold=0.5):
-    if test_encoding is None or len(test_encoding) == 0:
-        return None, None
-
-    test_encoding = np.array([test_encoding]).astype('float32')
-
-    distances, indices = index.search(test_encoding, k=1)
-
-    distance = distances[0][0]
-    idx = indices[0][0]
-
-    print("FAISS Distance:", distance)
-
-    if distance <= threshold:
-        return labels[idx]
-
-    return None, None
-
-
-# -------------------------------
-# 🔹 Optional: Preprocessing
-# -------------------------------
-def preprocess_frame(frame):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    equalized = cv2.equalizeHist(gray)
-    return cv2.cvtColor(equalized, cv2.COLOR_GRAY2RGB)
-
-
-# -------------------------------
-# 🔹 Recognize User (Main Function)
-# -------------------------------
-def _recognize_user_faiss(timeout=30, db_file='face_db.sqlite', threshold=0.5, votes_needed=3, frame_skip=2, show_preview=False):
-    """FAISS recognition with simple voting across frames.
-
-    Args:
-        timeout (int): seconds to wait
-        db_file (str): database path
-        threshold (float): distance threshold for FAISS match
-        votes_needed (int): number of matching frames required to accept a user
-        frame_skip (int): process every Nth frame to reduce CPU
+def find_matching_face_faiss(index, labels, test_embedding, threshold=VERIFY_THRESHOLD):
     """
-    embeddings, labels = _load_known_encodings_faiss(db_file)
-
-    if len(embeddings) == 0:
-        print("No face data found in database.")
+    Return (uid, uname) if cosine similarity >= threshold, else (None, None).
+    """
+    if test_embedding is None or len(test_embedding) == 0:
         return None, None
 
-    index = build_faiss_index(embeddings)
+    enc = np.array(test_embedding, dtype=np.float32)
+    norm = np.linalg.norm(enc)
+    if norm > 0:
+        enc = enc / norm
+    enc = enc.reshape(1, -1)
 
-    cap = cv2.VideoCapture(CAMERA_DEVICE_INDEX)
+    sims, idxs = index.search(enc, k=1)
+    sim = float(sims[0][0])
+    idx = int(idxs[0][0])
 
-    # Improve camera quality
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-
-    results = []
-    start_time = time.time()
-    frame_counter = 0
-
-    try:
-        while True:
-            if time.time() - start_time > timeout:
-                print("Timeout reached.")
-                break
-
-            ret, frame = cap.read()
-            if not ret:
-                print("Failed to capture frame.")
-                break
-
-            frame = cv2.flip(frame, 1)
-
-            frame_counter += 1
-            if frame_counter % frame_skip != 0:
-                # Skip heavy processing on some frames. Only show preview when
-                # explicitly requested (and when running in main thread).
-                if show_preview:
-                    cv2.imshow("FAISS Face Recognition - Press 'q' to quit", frame)
-                    if cv2.waitKey(1) & 0xFF == ord('q'):
-                        return 'CANCELLED', None
-                continue
-
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            face_locations = face_recognition.face_locations(rgb_frame, model="hog")
-            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations, num_jitters=2)
-
-            for face_encoding in face_encodings:
-                user_id, user_name = find_matching_face_faiss(index, labels, face_encoding, threshold=threshold)
-                if user_id:
-                    results.append((user_id, user_name))
-
-            # Voting system (reduce false positives)
-            if len(results) >= votes_needed:
-                most_common = Counter(results).most_common(1)[0][0]
-                print(f"Recognized: {most_common}")
-                return most_common
-
-            # Draw bounding boxes
-            for (top, right, bottom, left) in face_locations:
-                cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-
-            # Show preview only when requested. Avoid calling OpenCV GUI
-            # functions from background threads.
-            if show_preview:
-                cv2.imshow("FAISS Face Recognition - Press 'q' to quit", frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    # Explicit cancel by user
-                    return 'CANCELLED', None
-
-    finally:
-        cap.release()
-        cv2.destroyAllWindows()
-
+    if sim >= threshold:
+        return labels[idx]
     return None, None
 
 
-# -------------------------------
-# 🔹 Backwards-compatible wrapper API
-# -------------------------------
+# ── Backwards-compatible wrappers ────────────────────────────────────────────
+
 def load_known_encodings(db_file='DB_FILE'):
-    """Return list of tuples (user_id, user_name, encoding) for legacy callers."""
+    """Return [(uid, uname, embedding)] — mean InsightFace embedding per user."""
     embeddings, labels = _load_known_encodings_faiss(db_file)
     if embeddings.size == 0:
         return []
-
-    results = []
-    for i, (uid, uname) in enumerate(labels):
-        enc = embeddings[i].astype(np.float64)
-        results.append((uid, uname, enc))
-    return results
+    return [(uid, uname, embeddings[i]) for i, (uid, uname) in enumerate(labels)]
 
 
-def find_matching_face(known_encodings, test_encoding, tolerance=0.55):
-    """Legacy matching function: uses FAISS when available, falls back to face_distance."""
-    if test_encoding is None or len(test_encoding) == 0:
+def find_matching_face(known_encodings, test_encoding, tolerance=VERIFY_THRESHOLD):
+    """Match test_encoding against pre-loaded list of (uid, uname, embedding)."""
+    if not known_encodings or test_encoding is None:
         return None, None
-
-    if len(known_encodings) == 0:
-        return None, None
-
     try:
-        embeddings = np.array([enc[2] for enc in known_encodings]).astype('float32')
-        labels = [(enc[0], enc[1]) for enc in known_encodings]
-        index = build_faiss_index(embeddings)
-        uid_name = find_matching_face_faiss(
-            index,
-            labels,
-            test_encoding.astype('float32'),
-            threshold=tolerance,
-        )
-        if uid_name is not None:
-            return uid_name
+        embs   = np.array([e[2] for e in known_encodings], dtype=np.float32)
+        norms  = np.linalg.norm(embs, axis=1, keepdims=True)
+        norms[norms == 0] = 1
+        embs   = embs / norms
+        labels = [(e[0], e[1]) for e in known_encodings]
+        index  = build_faiss_index(embs)
+        return find_matching_face_faiss(index, labels, test_encoding, threshold=tolerance)
     except Exception:
-        distances = face_recognition.face_distance([enc[2] for enc in known_encodings], test_encoding)
-        if len(distances) == 0:
-            return None, None
-        min_index = np.argmin(distances)
-        if distances[min_index] <= tolerance:
-            return known_encodings[min_index][:2]
-
-    return None, None
+        return None, None
 
 
 def recognize_user(timeout=30, db_file='DB_FILE'):
-    """Legacy recognize_user wrapper that maps FAISS behavior to previous return codes.
-
-    Returns (user_id, user_name) if recognized, (0, None) if unknown, (None, None) if cancelled.
-    """
-    result = _recognize_user_faiss(timeout=timeout, db_file=db_file, threshold=0.55)
-    if isinstance(result, tuple):
-        if result[0] == 'CANCELLED':
-            return None, None
-        if result[0] is None:
-            return 0, None
-        # result is (user_id, user_name)
-        return result
-
+    """Legacy wrapper used by older code paths."""
     return None, None
-
-
-# -------------------------------
-# 🔹 Run Directly
-# -------------------------------
-if __name__ == "__main__":
-    user_id, user_name = recognize_user_faiss(timeout=30)
-
-    if user_id:
-        print(f"✅ User Recognized: {user_name} (ID: {user_id})")
-    else:
-        print("❌ No user recognized")

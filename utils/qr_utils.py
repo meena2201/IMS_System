@@ -13,6 +13,16 @@ import cv2
 import time
 import threading
 import queue
+
+def _cv2_has_gui():
+    try:
+        cv2.namedWindow("__test__", cv2.WINDOW_NORMAL)
+        cv2.destroyWindow("__test__")
+        return True
+    except cv2.error:
+        return False
+
+_CV2_GUI = _cv2_has_gui()
 from PIL import Image, ImageTk
 import tkinter as _tk
 from .text_utils import text_to_speech
@@ -114,7 +124,8 @@ def scan_qr_code():
                 product_id = data
 
                 cap.release()
-                cv2.destroyAllWindows()
+                if _CV2_GUI:
+                    cv2.destroyAllWindows()
                 return product_id
 
         # Do not call cv2.imshow or cv2.waitKey here; this function may run
@@ -123,7 +134,8 @@ def scan_qr_code():
         # omitted to avoid OpenCV GUI calls from non-main threads.
 
     cap.release()
-    cv2.destroyAllWindows()
+    if _CV2_GUI:
+        cv2.destroyAllWindows()
     return None
 
 

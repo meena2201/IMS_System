@@ -23,9 +23,17 @@ def initialize_database(db_file='DB_FILE'):
             user_id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_name TEXT NOT NULL,
             face_encoding BLOB,
-            type TEXT DEFAULT 'User'
+            type TEXT DEFAULT 'User',
+            school TEXT DEFAULT '',
+            place TEXT DEFAULT ''
         )
         """)
+        # Migration: add school/place columns if they don't exist yet (existing DBs)
+        for col in ("school TEXT DEFAULT ''", "place TEXT DEFAULT ''"):
+            try:
+                cursor.execute(f"ALTER TABLE users ADD COLUMN {col}")
+            except sqlite3.OperationalError:
+                pass
 
         # Create face_encodings table for multiple patterns per user
         cursor.execute("""
@@ -33,9 +41,15 @@ def initialize_database(db_file='DB_FILE'):
             encoding_id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             face_encoding BLOB NOT NULL,
+            face_image BLOB,
             FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
         )
         """)
+        # Migration: add face_image column if it doesn't exist yet
+        try:
+            cursor.execute("ALTER TABLE face_encodings ADD COLUMN face_image BLOB")
+        except sqlite3.OperationalError:
+            pass
 
         # Create product_history table
         cursor.execute("""
