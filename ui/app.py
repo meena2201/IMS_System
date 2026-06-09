@@ -31,6 +31,17 @@ DB_FILE = "DB_FILE"
 CAMERA_INDEX = 1          # 0 = built-in, 1 = external/USB
 PREVIEW_W, PREVIEW_H = 400, 300   # inline camera preview size
 
+# On Windows use DirectShow backend (faster open, avoids MSMF hangs)
+_CAM_BACKEND = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
+
+
+def _open_camera(index):
+    """Open camera with platform-appropriate backend, fall back to index 0."""
+    cap = cv2.VideoCapture(index, _CAM_BACKEND)
+    if not cap.isOpened() and index != 0:
+        cap = cv2.VideoCapture(0, _CAM_BACKEND)
+    return cap
+
 # ─── Themes ──────────────────────────────────────────────────────────────────
 
 THEMES = {
@@ -159,11 +170,13 @@ class _CameraThread(threading.Thread):
             self._result = None   # clear stale results from previous mode
 
     def run(self):
-        cap = cv2.VideoCapture(self._idx)
+        cap = _open_camera(self._idx)
+        if not cap.isOpened():
+            return
         cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         cap.set(cv2.CAP_PROP_FPS, 30)
-        # Minimise queued V4L2 buffers so the thread exits cleanly within 1 frame
+        # Minimise queued buffers so thread exits cleanly within 1 frame
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         n = 0
         try:
