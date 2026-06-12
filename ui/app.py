@@ -702,10 +702,16 @@ class HomePage(Page):
 
     def _do_checkinout(self, user_id, user_name):
         pid = self._product_id
-        now = time.strftime("%Y-%m-%d %H:%M:%S")
+        now_db = time.strftime("%Y-%m-%d %H:%M:%S")
+        now_display = time.strftime("%d-%m-%Y %I:%M:%S %p")
         try:
             with sqlite3.connect(self._db) as conn:
                 c = conn.cursor()
+                
+                c.execute("SELECT school FROM users WHERE user_id=?", (user_id,))
+                user_row = c.fetchone()
+                school_name = user_row[0] if user_row and user_row[0] else "N/A"
+
                 c.execute("SELECT product_id, product_name FROM formatted_items WHERE product_id=?", (pid,))
                 row = c.fetchone()
                 if not row:
@@ -719,7 +725,7 @@ class HomePage(Page):
                 if open_rec:
                     checkout_time = open_rec[5] if len(open_rec) > 5 else "—"
                     c.execute("UPDATE product_history SET check_in_time=? WHERE product_id=? AND check_in_time IS NULL",
-                              (now, pid))
+                              (now_db, pid))
                     conn.commit()
                     self._status.config(text=f"✅  Checked IN: {pname}", fg="#27ae60")
                     text_to_speech(f"Checked in: {pname}")
@@ -732,12 +738,13 @@ class HomePage(Page):
                         f"  Product : {pname}\n"
                         f"  ID      : {pid}\n"
                         f"  User    : {user_name}\n"
-                        f"  Time    : {now}")
+                        f"  School  : {school_name}\n"
+                        f"  Time    : {now_display}")
                     return
                 else:
                     c.execute("""INSERT INTO product_history
                                  (product_id, product_name, user_id, user_name, check_out_time, check_in_time)
-                                 VALUES (?,?,?,?,?,NULL)""", (pid, pname, user_id, user_name, now))
+                                 VALUES (?,?,?,?,?,NULL)""", (pid, pname, user_id, user_name, now_db))
                     conn.commit()
                     self._status.config(text=f"✅  Checked OUT: {pname} by {user_name}", fg="#2980b9")
                     text_to_speech(f"Checked out: {pname}")
@@ -750,7 +757,8 @@ class HomePage(Page):
                         f"  Product : {pname}\n"
                         f"  ID      : {pid}\n"
                         f"  User    : {user_name}\n"
-                        f"  Time    : {now}")
+                        f"  School  : {school_name}\n"
+                        f"  Time    : {now_display}")
                     return
         except sqlite3.Error as e:
             self._status.config(text=f"DB error: {e}", fg="red")
@@ -944,8 +952,25 @@ class AdminHistoryPage(Page):
                 """, (f"%{term}%",)*4).fetchall()
             for i in self._tree.get_children():
                 self._tree.delete(i)
+                
+            from datetime import datetime
+            def format_date_str(date_str):
+                if not date_str:
+                    return date_str
+                try:
+                    dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+                    return dt.strftime("%d-%m-%Y %I:%M:%S %p")
+                except ValueError:
+                    return date_str
+                    
             for r in rows:
-                self._tree.insert("", "end", values=r)
+                formatted_row = []
+                for val in r:
+                    if isinstance(val, str) and "-" in val and ":" in val:
+                        formatted_row.append(format_date_str(val))
+                    else:
+                        formatted_row.append(val)
+                self._tree.insert("", "end", values=tuple(formatted_row))
         except Exception as e:
             messagebox.showerror("Search error", str(e))
 
@@ -1199,29 +1224,22 @@ class UserManagementPage(Page):
 
 
     def _wait_for_thread_exit(self, thread, retries=20):
-        """Poll every 50 ms until camera thread is dead, then start countdown."""
+        """Poll every 50 ms until camera thread is dead, then save."""
         if thread and thread.is_alive():
             if retries > 0:
                 self.after(50, lambda: self._wait_for_thread_exit(thread, retries - 1))
                 return
-        # Thread confirmed dead — start 5-second countdown before save
-        self._countdown(5)
+        # Thread confirmed dead — save immediately
+        self._status.config(text="Saving user data…", fg="#e67e22")
+        self.update_idletasks()
+        self._run_save_with_progress()
 
     def _countdown(self, secs_left):
-        """Show a live countdown, then auto-save when it hits 0."""
-        if secs_left > 0:
-            self._progress["value"] = self._SAMPLE_TARGET  # keep bar full
-            self._status.config(
-                text=f"✅ Capture complete!  Saving in {secs_left} second{'s' if secs_left != 1 else ''}…",
-                fg="#27ae60")
-            self.after(1000, lambda: self._countdown(secs_left - 1))
-        else:
-            self._status.config(text="Saving user data…", fg="#e67e22")
-            self.update_idletasks()
-            self._run_save_with_progress()
+        """(Unused) Show a live countdown, then auto-save when it hits 0."""
+        pass
 
     def _run_save_with_progress(self):
-        """Open a progress window and run _save_user in a background thread."""
+        """Run _save_user in a background thread using the inline progress bar."""
         name   = self._name_var.get().strip()
         school = self._school_var.get().strip()
         place  = self._place_var.get().strip()
@@ -1240,20 +1258,10 @@ class UserManagementPage(Page):
             self._start_btn.config(state=tk.NORMAL)
             return
 
-        # Progress window
-        prog_win = tk.Toplevel(self)
-        prog_win.title("Saving…")
-        prog_win.grab_set()
-        prog_win.resizable(False, False)
-        tk.Label(prog_win, text="Registering user, please wait…",
-                 font=("Arial", 11), pady=10, padx=20).pack()
-        pbar = ttk.Progressbar(prog_win, mode="indeterminate", length=280)
-        pbar.pack(padx=20, pady=(0, 10))
-        info = tk.Label(prog_win, text=f"Name: {name}  |  School: {school or '—'}  |  Place: {place or '—'}",
-                        font=("Arial", 9), fg="#555", pady=4)
-        info.pack()
-        pbar.start(12)
-        prog_win.update()
+        # Use inline progress bar
+        self._progress.config(mode="indeterminate")
+        self._progress.start(15)
+        self.update_idletasks()
 
         captured_copy = list(self._captured)
         result_holder = {}
@@ -1311,8 +1319,9 @@ class UserManagementPage(Page):
                 result_holder["error"] = str(e)
 
         def _after_save():
-            pbar.stop()
-            prog_win.destroy()
+            self._progress.stop()
+            self._progress.config(mode="determinate")
+            self._progress["value"] = 0
 
             if "dup" in result_holder:
                 match_uid, match_name, count, total, stored_img = result_holder["dup"]

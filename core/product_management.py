@@ -40,6 +40,16 @@ def search_product(entry_search, tree, db_file='DB_FILE'):
         entry_search.delete(0, tk.END)
 
 
+def format_date_str(date_str):
+    if not date_str:
+        return date_str
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+        return dt.strftime("%d-%m-%Y %I:%M:%S %p")
+    except ValueError:
+        return date_str
+
+
 def update_treeview(tree, items):
     """
     Helper function to update the Treeview.
@@ -54,7 +64,14 @@ def update_treeview(tree, items):
 
     # Insert fetched items into the Treeview
     for item in items:
-        tree.insert("", "end", values=item)
+        # item is a tuple, we need to format the date fields if they match the datetime format
+        formatted_item = []
+        for val in item:
+            if isinstance(val, str) and "-" in val and ":" in val:
+                formatted_item.append(format_date_str(val))
+            else:
+                formatted_item.append(val)
+        tree.insert("", "end", values=tuple(formatted_item))
 
 
 def show_items_admin(tree, db_file='DB_FILE'):
@@ -122,7 +139,13 @@ def show_items(tree, db_file='DB_FILE'):
         # Insert rows into TreeView
         for row in items:
             tag = 'checked_in' if row[5] else 'checked_out'
-            tree.insert("", "end", values=row, tags=(tag,))
+            formatted_row = []
+            for val in row:
+                if isinstance(val, str) and "-" in val and ":" in val:
+                    formatted_row.append(format_date_str(val))
+                else:
+                    formatted_row.append(val)
+            tree.insert("", "end", values=tuple(formatted_row), tags=(tag,))
 
     except:
         pass

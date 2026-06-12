@@ -73,6 +73,11 @@ def setup_tab2(parent_window, db_file='DB_FILE'):
     cancel_button = tk.Button(btn_frame, text="Cancel", width=10, state=tk.DISABLED)
     cancel_button.pack(side=tk.LEFT, padx=4)
 
+    inline_pbar = ttk.Progressbar(add_user_frame, mode="indeterminate", length=280)
+    # Hidden initially
+    inline_pbar.grid(row=4, column=0, columnspan=2, pady=10)
+    inline_pbar.grid_remove()
+
     # Shared state between camera thread and Tkinter callbacks
     _state = {
         "cap": None,
@@ -180,30 +185,67 @@ def setup_tab2(parent_window, db_file='DB_FILE'):
         message_label.config(text=f"Captured sample {n}/{SAMPLE_TARGET}", fg="green")
         if n < SAMPLE_TARGET:
             return
-        # All samples collected — save user
+        # All samples collected — show inline loading bar, then save user
         _stop_camera()
         user_name = name_entry.get().strip()
-        known_encodings = get_known_encodings(db_file=db_file)
-        if known_encodings:
-            for enc in _state["captured_encodings"]:
-                uid, existing_name = find_matching_face(known_encodings, enc)
-                if uid:
-                    message_label.config(
-                        text=f"User already exists: ID={uid}, Name={existing_name}", fg="red")
-                    return
-        conn = sqlite3.connect(db_file)
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (user_name) VALUES (?)", (user_name,))
-        user_id = cursor.lastrowid
-        for enc in _state["captured_encodings"]:
-            cursor.execute(
-                "INSERT INTO face_encodings (user_id, face_encoding) VALUES (?, ?)",
-                (user_id, enc.tobytes()))
-        conn.commit()
-        conn.close()
-        message_label.config(text=f"User '{user_name}' added successfully!", fg="green")
-        name_entry.delete(0, tk.END)
-        refresh_user_list()
+
+        inline_pbar.grid(row=4, column=0, columnspan=2, pady=10)  # Show the progress bar explicitly
+        inline_pbar.start(15)
+        add_user_button.config(state=tk.DISABLED) # Prevent starting camera again while saving
+        parent_window.update() # Force UI to render the progress bar immediately
+
+        def _finish_registration():
+            import threading
+
+            def _worker():
+                dup_info = None
+                known_encodings = get_known_encodings(db_file=db_file)
+                if known_encodings:
+                    for enc in _state["captured_encodings"]:
+                        uid, existing_name = find_matching_face(known_encodings, enc)
+                        if uid:
+                            dup_info = (uid, existing_name)
+                            break
+
+                if not dup_info:
+                    try:
+                        conn = sqlite3.connect(db_file)
+                        cursor = conn.cursor()
+                        cursor.execute("INSERT INTO users (user_name) VALUES (?)", (user_name,))
+                        user_id = cursor.lastrowid
+                        for enc in _state["captured_encodings"]:
+                            cursor.execute(
+                                "INSERT INTO face_encodings (user_id, face_encoding) VALUES (?, ?)",
+                                (user_id, enc.tobytes()))
+                        conn.commit()
+                        conn.close()
+                    except Exception as e:
+                        dup_info = ("DB_ERROR", str(e))
+
+                def _update_gui():
+                    inline_pbar.stop()
+                    inline_pbar.grid_remove()
+                    add_user_button.config(state=tk.NORMAL)
+                    
+                    if dup_info:
+                        if dup_info[0] == "DB_ERROR":
+                            messagebox.showerror("Database Error", dup_info[1])
+                        else:
+                            uid, existing_name = dup_info
+                            message_label.config(
+                                text=f"User already exists: ID={uid}, Name={existing_name}", fg="red")
+                            messagebox.showerror("Error", f"User already exists: ID={uid}, Name={existing_name}")
+                    else:
+                        message_label.config(text=f"User '{user_name}' added successfully!", fg="green")
+                        messagebox.showinfo("Success", f"User '{user_name}' added successfully!")
+                        name_entry.delete(0, tk.END)
+                        refresh_user_list()
+
+                parent_window.after(0, _update_gui)
+
+            threading.Thread(target=_worker, daemon=True).start()
+
+        parent_window.after(1000, _finish_registration)
 
     def _do_cancel():
         _stop_camera()

@@ -33,7 +33,7 @@ raw_stats = text_stream.getvalue()
 # Build the report document.
 doc = Document()
 doc.add_heading('Profile Report', level=1)
-doc.add_paragraph(f'Date: {datetime.now():%Y-%m-%d %H:%M:%S}')
+doc.add_paragraph(f'Date: {datetime.now().strftime("%d-%m-%Y %I:%M:%S %p")}')
 doc.add_paragraph(f'Python: {platform.python_version()} ({platform.python_implementation()})')
 doc.add_paragraph(f'Platform: {platform.system()} {platform.release()}')
 doc.add_paragraph('Profile target: module import and database initialization startup flow.')
