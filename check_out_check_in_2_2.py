@@ -275,8 +275,20 @@ def setp_tab2(parent_window):
     def add_user():
             user_name = name_entry.get().strip()
             if not user_name:
-                message_label.config(text="Please enter the Name", fg="red")
+                messagebox.showwarning("Missing Name", "Please enter the Name.")
                 return
+                
+            try:
+                conn_check = sqlite3.connect(DB_FILE)
+                cursor_check = conn_check.cursor()
+                cursor_check.execute("SELECT user_id FROM users WHERE LOWER(user_name) = LOWER(?)", (user_name,))
+                if cursor_check.fetchone():
+                    messagebox.showwarning("Duplicate Name", "This username already exists. Please add an initial or last name.")
+                    conn_check.close()
+                    return
+                conn_check.close()
+            except Exception:
+                pass
 
             cap = cv2.VideoCapture(CAMERA_DEVICE_INDEX)
             start_time = time.time()
@@ -1323,4 +1335,3 @@ show_items()
 
 # Start the main loop
 window.mainloop()
-

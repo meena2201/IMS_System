@@ -143,8 +143,21 @@ def setup_tab2(parent_window, db_file='DB_FILE'):
     def _start_capture():
         user_name = name_entry.get().strip()
         if not user_name or user_name == getattr(name_entry, 'placeholder', ''):
-            message_label.config(text="Please enter a name first.", fg="red")
+            messagebox.showwarning("Missing Name", "Please enter a name first.")
             return
+            
+        try:
+            conn = sqlite3.connect(db_file)
+            cursor = conn.cursor()
+            cursor.execute("SELECT user_id FROM users WHERE LOWER(user_name) = LOWER(?)", (user_name,))
+            if cursor.fetchone():
+                messagebox.showwarning("Duplicate Name", "This username already exists. Please add an initial or last name.")
+                conn.close()
+                return
+            conn.close()
+        except Exception:
+            pass
+
         import time
         cap = cv2.VideoCapture(CAMERA_DEVICE_INDEX)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)

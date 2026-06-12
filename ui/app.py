@@ -1098,11 +1098,18 @@ class UserManagementPage(Page):
     def _start_camera(self):
         name = self._name_var.get().strip()
         if not name:
-            self._status.config(text="Please enter a name first.", fg="red")
+            messagebox.showwarning("Missing Name", "Please enter a name first.")
             return
         if name.isdigit():
-            self._status.config(text="Name must be a real name, not a number.", fg="red")
+            messagebox.showwarning("Invalid Name", "Name must be a real name, not a number.")
             return
+        try:
+            with sqlite3.connect(self._db) as conn:
+                if conn.execute("SELECT user_id FROM users WHERE LOWER(user_name) = LOWER(?)", (name,)).fetchone():
+                    messagebox.showwarning("Duplicate Name", "This username already exists. Please add an initial or last name.")
+                    return
+        except Exception:
+            pass
         self._running = True
         self._captured = []
         self._dist_hint = ""
@@ -1229,16 +1236,28 @@ class UserManagementPage(Page):
         # Validate before opening the window
         if not name:
             messagebox.showwarning("Missing Name", "Please enter the user's name.")
-            self._start_btn.config(state=tk.NORMAL)
+            self._register_btn.config(state=tk.NORMAL)
+            self._status.config(text="Please fix the name and click 'Register User'.", fg="red")
             return
         if name.isdigit():
             messagebox.showwarning("Invalid Name", "Name must be a real name, not a number.")
-            self._start_btn.config(state=tk.NORMAL)
+            self._register_btn.config(state=tk.NORMAL)
+            self._status.config(text="Please fix the name and click 'Register User'.", fg="red")
             return
         if not self._captured:
             messagebox.showwarning("No Face Data", "No face samples found. Please capture again.")
             self._start_btn.config(state=tk.NORMAL)
             return
+            
+        try:
+            with sqlite3.connect(self._db) as conn:
+                if conn.execute("SELECT user_id FROM users WHERE LOWER(user_name) = LOWER(?)", (name,)).fetchone():
+                    messagebox.showwarning("Duplicate Name", "This username already exists. Please add an initial or last name.")
+                    self._register_btn.config(state=tk.NORMAL)
+                    self._status.config(text="Please fix the name and click 'Register User'.", fg="red")
+                    return
+        except Exception:
+            pass
 
         # Progress window
         prog_win = tk.Toplevel(self)
@@ -1593,6 +1612,9 @@ class UserManagementPage(Page):
                 return
             try:
                 with sqlite3.connect(self._db) as conn:
+                    if conn.execute("SELECT user_id FROM users WHERE LOWER(user_name) = LOWER(?) AND user_id != ?", (new_name, uid)).fetchone():
+                        messagebox.showwarning("Duplicate Name", "This username already exists. Please add an initial or last name.")
+                        return
                     conn.execute(
                         "UPDATE users SET user_name=?, school=?, place=? WHERE user_id=?",
                         (new_name, new_school, new_place, uid))
