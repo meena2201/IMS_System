@@ -1102,8 +1102,26 @@ class UserManagementPage(Page):
         tk.Label(hdr, text="User List", font=("Arial", 14, "bold")).pack(side="left")
         tk.Button(hdr, text="🔄", bg="#3498db", fg="white", relief=tk.FLAT, width=3,
                   command=self._refresh_list).pack(side="right")
-        self._count_label = tk.Label(right, text="", font=("Arial", 9), fg="#7f8c8d")
-        self._count_label.pack(anchor="w")
+
+        # ── search and sort ──
+        sf = tk.Frame(right)
+        sf.pack(fill="x", pady=(0, 4))
+        
+        tk.Label(sf, text="Search:").pack(side="left")
+        self._search_var = tk.StringVar()
+        self._search_var.trace_add("write", lambda *args: self._refresh_list())
+        tk.Entry(sf, textvariable=self._search_var, width=15).pack(side="left", padx=(2, 10))
+        
+        tk.Label(sf, text="Sort by:").pack(side="left")
+        self._sort_var = tk.StringVar(value="ID (Desc)")
+        sort_cb = ttk.Combobox(sf, textvariable=self._sort_var, 
+                               values=["ID (Desc)", "ID (Asc)", "Name (A-Z)", "School (A-Z)"], 
+                               state="readonly", width=12)
+        sort_cb.pack(side="left", padx=2)
+        sort_cb.bind("<<ComboboxSelected>>", lambda e: self._refresh_list())
+
+        self._count_label = tk.Label(sf, text="", font=("Arial", 9), fg="#7f8c8d")
+        self._count_label.pack(side="right")
 
         tf = tk.Frame(right)
         tf.pack(fill="both", expand=True)
@@ -1538,15 +1556,38 @@ class UserManagementPage(Page):
     def _refresh_list(self):
         for i in self._tree.get_children():
             self._tree.delete(i)
+            
+        search_query = self._search_var.get().strip().lower()
+        sort_opt = self._sort_var.get()
+        
+        order_by = "user_id DESC"
+        if sort_opt == "ID (Asc)":
+            order_by = "user_id ASC"
+        elif sort_opt == "Name (A-Z)":
+            order_by = "user_name COLLATE NOCASE ASC"
+        elif sort_opt == "School (A-Z)":
+            order_by = "school COLLATE NOCASE ASC"
+            
         try:
             with sqlite3.connect(self._db) as conn:
-                rows = conn.execute(
-                    "SELECT user_id, user_name, COALESCE(school,''), COALESCE(place,''), type "
-                    "FROM users ORDER BY user_id DESC"
-                ).fetchall()
+                if search_query:
+                    # Using LIKE for search
+                    wildcard = f"%{search_query}%"
+                    rows = conn.execute(
+                        f"SELECT user_id, user_name, COALESCE(school,''), COALESCE(place,''), type "
+                        f"FROM users "
+                        f"WHERE LOWER(user_name) LIKE ? OR CAST(user_id AS TEXT) LIKE ? OR LOWER(COALESCE(school,'')) LIKE ? "
+                        f"ORDER BY {order_by}",
+                        (wildcard, wildcard, wildcard)
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        f"SELECT user_id, user_name, COALESCE(school,''), COALESCE(place,''), type "
+                        f"FROM users ORDER BY {order_by}"
+                    ).fetchall()
             for r in rows:
                 self._tree.insert("", "end", values=r)
-            self._count_label.config(text=f"{len(rows)} user(s) registered")
+            self._count_label.config(text=f"{len(rows)} user(s)")
         except Exception:
             pass
 
