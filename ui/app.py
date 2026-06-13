@@ -233,8 +233,8 @@ def _frame_to_photoimage(frame, w=PREVIEW_W, h=PREVIEW_H):
 
 
 # Optimal face-height ratio range (face height / frame height)
-_DIST_MIN = 0.18   # too far below this
-_DIST_MAX = 0.60   # too close above this
+_DIST_MIN = 0.20   # too far below this
+_DIST_MAX = 0.65   # too close above this
 
 
 def _draw_distance_guide(bgr, locs):
@@ -246,8 +246,8 @@ def _draw_distance_guide(bgr, locs):
 
     # ── guide oval in centre ──
     cx, cy = w // 2, int(h * 0.45)
-    ow, oh = int(w * 0.28), int(h * 0.38)
-    cv2.ellipse(bgr, (cx, cy), (ow, oh), 0, 0, 360, (180, 180, 180), 1)
+    ow, oh = int(w * 0.18), int(h * 0.40)
+    cv2.ellipse(bgr, (cx, cy), (ow, oh), 0, 0, 360, (200, 200, 200), 2)
 
     if not locs:
         cv2.putText(bgr, "No face detected", (10, 30),
@@ -577,10 +577,41 @@ class HomePage(Page):
         Returns (annotated_bgr, (uid, uname, hint, conf) | (None, None, hint, 0)).
         conf = cosine similarity scaled to 0-100.
         """
+        h, w = bgr.shape[:2]
+        cx, cy = w // 2, int(h * 0.45)
+        ow, oh = int(w * 0.18), int(h * 0.40)
+
         faces = detect_faces(bgr)
+        
+        valid_faces = []
+        bounds_violated = False
+        for f in faces:
+            left, top, right, bottom = f.bbox
+            face_cx = (left + right) / 2
+            face_cy = (top + bottom) / 2
+            center_dist = ((face_cx - cx) ** 2 / (ow ** 2)) + ((face_cy - cy) ** 2 / (oh ** 2))
+            
+            # STRICT CHECK: Ensure the ENTIRE bounding box fits inside the oval's rectangular bounds
+            if center_dist <= 0.15 and left >= cx - ow and right <= cx + ow and top >= cy - oh and bottom <= cy + oh:
+                valid_faces.append(f)
+            elif center_dist <= 1.5:
+                bounds_violated = True
+        faces = valid_faces
+
+        mask = np.zeros((h, w), dtype=np.uint8)
+        cv2.ellipse(mask, (cx, cy), (ow, oh), 0, 0, 360, 255, -1)
+        blurred_bgr = cv2.GaussianBlur(bgr, (51, 51), 0)
+        bgr = np.where(mask[:, :, None] == 255, bgr, blurred_bgr)
+
         locs  = faces_to_locations(faces)
         bgr, hint, _ = _draw_distance_guide(bgr, locs)
         result = None
+
+        if not faces and bounds_violated:
+            hint = "Center your full face strictly inside the oval"
+            (tw, th), _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.70, 2)
+            cv2.rectangle(bgr, (8, 8), (tw + 20, 45), (0, 0, 0), -1)
+            cv2.putText(bgr, hint, (12, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.70, (0, 165, 255), 2)
 
         if faces:
             h = bgr.shape[0]
@@ -1014,15 +1045,17 @@ class UserManagementPage(Page):
         # ---- form fields ----
         form = tk.Frame(left)
         form.pack(fill="x", pady=2)
+        
         for r, (lbl, attr) in enumerate([
             ("Name:",   "_name_var"),
             ("School:", "_school_var"),
             ("Place:",  "_place_var"),
         ]):
-            tk.Label(form, text=lbl, width=7, anchor="e").grid(row=r, column=0, pady=3, padx=4)
+            tk.Label(form, text=lbl, width=8, anchor="e").grid(row=r, column=0, pady=3, padx=4)
             var = tk.StringVar()
             setattr(self, attr, var)
             ent = tk.Entry(form, textvariable=var, width=28, font=("Arial", 11))
+            
             ent.grid(row=r, column=1, pady=3, padx=4, sticky="w")
             if attr == "_name_var":
                 self._name_entry = ent
@@ -1115,9 +1148,41 @@ class UserManagementPage(Page):
         InsightFace detection for live preview + distance guide.
         Stores latest faces for the Capture button.
         """
+        h, w = bgr.shape[:2]
+        cx, cy = w // 2, int(h * 0.45)
+        ow, oh = int(w * 0.18), int(h * 0.40)
+
         faces = detect_faces(bgr)
+        
+        valid_faces = []
+        bounds_violated = False
+        for f in faces:
+            left, top, right, bottom = f.bbox
+            face_cx = (left + right) / 2
+            face_cy = (top + bottom) / 2
+            center_dist = ((face_cx - cx) ** 2 / (ow ** 2)) + ((face_cy - cy) ** 2 / (oh ** 2))
+            
+            # STRICT CHECK: Ensure the ENTIRE bounding box fits inside the oval's rectangular bounds
+            if center_dist <= 0.15 and left >= cx - ow and right <= cx + ow and top >= cy - oh and bottom <= cy + oh:
+                valid_faces.append(f)
+            elif center_dist <= 1.5:
+                bounds_violated = True
+        faces = valid_faces
+
+        mask = np.zeros((h, w), dtype=np.uint8)
+        cv2.ellipse(mask, (cx, cy), (ow, oh), 0, 0, 360, 255, -1)
+        blurred_bgr = cv2.GaussianBlur(bgr, (51, 51), 0)
+        bgr = np.where(mask[:, :, None] == 255, bgr, blurred_bgr)
+
         locs  = faces_to_locations(faces)
         bgr, hint, _ = _draw_distance_guide(bgr, locs)
+        
+        if not faces and bounds_violated:
+            hint = "Center your full face strictly inside the oval"
+            (tw, th), _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.70, 2)
+            cv2.rectangle(bgr, (8, 8), (tw + 20, 45), (0, 0, 0), -1)
+            cv2.putText(bgr, hint, (12, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.70, (0, 165, 255), 2)
+
         with self._lock:
             self._face_detected = bool(faces)
             self._cur_faces = faces
@@ -1188,7 +1253,7 @@ class UserManagementPage(Page):
         if not face_detected or not faces:
             self._status.config(text="No face detected — align your face with the oval.", fg="red")
             return
-        if "CLOSER" in hint or "BACK" in hint:
+        if "CLOSER" in hint or "BACK" in hint or "Center" in hint:
             self._status.config(text=f"⚠  {hint} before capturing.", fg="#e67e22")
             return
         # Use largest face (first after sort by area)
