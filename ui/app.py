@@ -46,24 +46,49 @@ def _open_camera(index):
     return cap
 
 
-def _detect_cameras(max_test=5):
+def _detect_cameras(max_test=10):
     """
     Return list of (index, label) for all cameras found.
-    Prefers USB cameras (higher indices) by listing them first.
+    Filters out phantom/metadata nodes by checking Linux sysfs, 
+    and reads the actual device name for the dropdown.
     """
     found = []
     for i in range(max_test):
+        sys_name = ""
+        # On Linux, skip metadata nodes (index > 0) to prevent duplicate/phantom cameras
+        if os.name == "posix":
+            index_file = f"/sys/class/video4linux/video{i}/index"
+            name_file = f"/sys/class/video4linux/video{i}/name"
+            if os.path.exists(index_file):
+                try:
+                    with open(index_file, "r") as f:
+                        if f.read().strip() != "0":
+                            continue  # Skip metadata/IR nodes
+                except Exception:
+                    pass
+            if os.path.exists(name_file):
+                try:
+                    with open(name_file, "r") as f:
+                        sys_name = f.read().strip()
+                except Exception:
+                    pass
+
         cap = cv2.VideoCapture(i, _CAM_BACKEND)
         if cap.isOpened():
-            found.append(i)
+            # Test if it can actually read a frame
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                found.append((i, sys_name))
             cap.release()
 
     if not found:
         return [(0, "Camera 0 (default)")]
 
     labels = []
-    for i in found:
-        if i == 0:
+    for i, sys_name in found:
+        if sys_name:
+            label = f"Camera {i} ({sys_name})"
+        elif i == 0:
             label = f"Camera {i} (Built-in)"
         else:
             label = f"Camera {i} (USB Webcam)"
@@ -177,6 +202,8 @@ def set_theme(name: str):
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 
+_camera_resource_lock = threading.Lock()
+
 class _CameraThread(threading.Thread):
     """
     Long-lived background thread: one camera open for the whole scan session.
@@ -201,38 +228,39 @@ class _CameraThread(threading.Thread):
             self._result = None   # clear stale results from previous mode
 
     def run(self):
-        cap = _open_camera(self._idx)
-        if not cap.isOpened():
-            return
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FPS, 30)
-        # Minimise queued buffers so thread exits cleanly within 1 frame
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        n = 0
-        try:
-            while not self._stop_evt.is_set():
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                frame = cv2.flip(frame, 1)
-                n += 1
-                with self._lock:
-                    proc  = self._proc
-                    every = self._every
-                if n % every == 0:
-                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    annotated, result = proc(rgb, frame.copy())
+        with _camera_resource_lock:
+            cap = _open_camera(self._idx)
+            if not cap.isOpened():
+                return
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            cap.set(cv2.CAP_PROP_FPS, 30)
+            # Minimise queued buffers so thread exits cleanly within 1 frame
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            n = 0
+            try:
+                while not self._stop_evt.is_set():
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    frame = cv2.flip(frame, 1)
+                    n += 1
                     with self._lock:
-                        self._display = annotated
-                        if result is not None:
-                            self._result = result
-                else:
-                    with self._lock:
-                        if self._display is None:
-                            self._display = frame
-        finally:
-            cap.release()
+                        proc  = self._proc
+                        every = self._every
+                    if n % every == 0:
+                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        annotated, result = proc(rgb, frame.copy())
+                        with self._lock:
+                            self._display = annotated
+                            if result is not None:
+                                self._result = result
+                    else:
+                        with self._lock:
+                            if self._display is None:
+                                self._display = frame
+            finally:
+                cap.release()
 
     def latest_display(self):
         with self._lock:
@@ -2002,16 +2030,22 @@ class InventoryApp(tk.Tk):
             if lbl == selected_label:
                 _active_camera_index = idx
                 break
-        # Restart camera on any active page that uses it
-        for page in self._pages.values():
-            if hasattr(page, '_cam_thread') and page._cam_thread is not None:
-                page._cam_thread.stop()
-                page._cam_thread = None
-        # If currently on home or user_management, restart camera immediately
+                
+        # Cleanly stop camera on any active page using proper lifecycle methods
+        # to ensure the UI loop doesn't get broken/frozen.
         if self._current is self._pages.get("home"):
-            self._pages["home"].on_show()
+            page = self._pages["home"]
+            if page._running:
+                was_mode = page._mode
+                page._stop_camera()
+                if was_mode == "qr":
+                    page.after(400, page._start_qr)
+                # Note: if it was in 'face' mode, we let the user start over 
+                # to ensure security and state consistency.
         elif self._current is self._pages.get("user_management"):
-            self._pages["user_management"]._restart_camera()
+            page = self._pages["user_management"]
+            if page._running:
+                page._restart_camera()
 
     def _add_page(self, name: str, page: Page):
         self._pages[name] = page
