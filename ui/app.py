@@ -100,70 +100,48 @@ THEMES = {
         "cam_bg":         "#05164d",
     },
     "Dark": {
-        "sidebar_bg":     "#1a1a2e",
-        "sidebar_fg":     "#e0e0e0",
-        "sidebar_active": "#1abc9c",
-        "sidebar_hover":  "#1abc9c",
-        "sidebar_sub_bg": "#16213e",
-        "logo_fg":        "#1abc9c",
-        "logo_sub_fg":    "#95a5a6",
-        "content_bg":     "#0f3460",
-        "header_fg":      "#e0e0e0",
-        "btn_primary":    "#1abc9c",
+        "sidebar_bg":     "#0f172a",
+        "sidebar_fg":     "#f8fafc",
+        "sidebar_active": "#3b82f6",
+        "sidebar_hover":  "#3b82f6",
+        "sidebar_sub_bg": "#1e293b",
+        "logo_fg":        "#38bdf8",
+        "logo_sub_fg":    "#94a3b8",
+        "content_bg":     "#020617",
+        "header_fg":      "#f8fafc",
+        "btn_primary":    "#3b82f6",
         "btn_primary_fg": "#ffffff",
-        "btn_secondary":  "#2980b9",
+        "btn_secondary":  "#334155",
         "btn_secondary_fg":"#ffffff",
-        "btn_danger":     "#e74c3c",
-        "btn_warning":    "#f39c12",
+        "btn_danger":     "#ef4444",
+        "btn_warning":    "#f59e0b",
         "btn_warning_fg": "#ffffff",
-        "status_ok":      "#1abc9c",
-        "status_err":     "#e74c3c",
-        "status_info":    "#3498db",
-        "cam_bg":         "#1a1a2e",
+        "status_ok":      "#10b981",
+        "status_err":     "#ef4444",
+        "status_info":    "#3b82f6",
+        "cam_bg":         "#0f172a",
     },
     "Light": {
-        "sidebar_bg":     "#2c3e50",
-        "sidebar_fg":     "#ffffff",
-        "sidebar_active": "#3498db",
-        "sidebar_hover":  "#3498db",
-        "sidebar_sub_bg": "#34495e",
-        "logo_fg":        "#ffffff",
-        "logo_sub_fg":    "#bdc3c7",
+        "sidebar_bg":     "#f8fafc",
+        "sidebar_fg":     "#334155",
+        "sidebar_active": "#2563eb",
+        "sidebar_hover":  "#2563eb",
+        "sidebar_sub_bg": "#f1f5f9",
+        "logo_fg":        "#0f172a",
+        "logo_sub_fg":    "#64748b",
         "content_bg":     "#ffffff",
-        "header_fg":      "#2c3e50",
-        "btn_primary":    "#3498db",
+        "header_fg":      "#0f172a",
+        "btn_primary":    "#2563eb",
         "btn_primary_fg": "#ffffff",
-        "btn_secondary":  "#2c3e50",
-        "btn_secondary_fg":"#ffffff",
-        "btn_danger":     "#e74c3c",
-        "btn_warning":    "#f39c12",
+        "btn_secondary":  "#e2e8f0",
+        "btn_secondary_fg":"#334155",
+        "btn_danger":     "#ef4444",
+        "btn_warning":    "#f59e0b",
         "btn_warning_fg": "#ffffff",
-        "status_ok":      "#27ae60",
-        "status_err":     "#e74c3c",
-        "status_info":    "#2980b9",
-        "cam_bg":         "#1a1a2e",
-    },
-    "Green": {
-        "sidebar_bg":     "#1b4332",
-        "sidebar_fg":     "#d8f3dc",
-        "sidebar_active": "#52b788",
-        "sidebar_hover":  "#52b788",
-        "sidebar_sub_bg": "#2d6a4f",
-        "logo_fg":        "#95d5b2",
-        "logo_sub_fg":    "#74c69d",
-        "content_bg":     "#f8fff9",
-        "header_fg":      "#1b4332",
-        "btn_primary":    "#52b788",
-        "btn_primary_fg": "#ffffff",
-        "btn_secondary":  "#1b4332",
-        "btn_secondary_fg":"#ffffff",
-        "btn_danger":     "#d62828",
-        "btn_warning":    "#f4a261",
-        "btn_warning_fg": "#ffffff",
-        "status_ok":      "#2d6a4f",
-        "status_err":     "#d62828",
-        "status_info":    "#52b788",
-        "cam_bg":         "#1b4332",
+        "status_ok":      "#10b981",
+        "status_err":     "#ef4444",
+        "status_info":    "#2563eb",
+        "cam_bg":         "#f1f5f9",
     },
 }
 
@@ -1982,14 +1960,13 @@ class InventoryApp(tk.Tk):
 
         theme_frame = tk.Frame(self._topbar, bg=t["sidebar_bg"])
         theme_frame.pack(side="right", padx=12)
-        tk.Label(theme_frame, text="Theme:", bg=t["sidebar_bg"],
-                 fg=t["sidebar_fg"], font=("Arial", 9)).pack(side="left")
         self._theme_var = tk.StringVar(value="AIAT")
-        self._theme_cb = ttk.Combobox(theme_frame, textvariable=self._theme_var,
-                                       values=list(THEMES.keys()),
-                                       state="readonly", width=8, font=("Arial", 9))
-        self._theme_cb.pack(side="left", padx=4)
-        self._theme_cb.bind("<<ComboboxSelected>>", self._on_theme_change)
+        self._theme_icon = tk.Label(theme_frame, text="☀️", bg=t["sidebar_bg"], fg=t["sidebar_fg"], font=("Arial", 12))
+        self._theme_icon.pack(side="left", padx=4)
+        self._theme_switch = tk.Canvas(theme_frame, width=44, height=24, highlightthickness=0, bd=0, bg=t["sidebar_bg"], cursor="hand2")
+        self._theme_switch.pack(side="left")
+        self._theme_switch.bind("<Button-1>", lambda e: self._toggle_theme())
+        self._draw_switch(False)
 
         # ── Camera selector (admin topbar) ────────────────────
         cam_frame = tk.Frame(self._topbar, bg=t["sidebar_bg"])
@@ -2030,10 +2007,26 @@ class InventoryApp(tk.Tk):
                   and self._pages["home"]._mode is None else None)
         self.bind("<F2>", lambda e: self._show_page("login"))
 
-    def _on_theme_change(self, _event=None):
-        name = self._theme_var.get()
-        set_theme(name)
+    def _toggle_theme(self):
+        current = self._theme_var.get()
+        if current in ("AIAT", "Light"):
+            new_theme = "Dark"
+            is_dark = True
+            icon = "🌙"
+        else:
+            new_theme = "Light"
+            is_dark = False
+            icon = "☀️"
+            
+        self._theme_var.set(new_theme)
+        self._draw_switch(is_dark)
+        self._theme_icon.config(text=icon)
+        
+        set_theme(new_theme)
         t = get_theme()
+        self._theme_switch.config(bg=t["sidebar_bg"])
+        self._theme_icon.config(bg=t["sidebar_bg"], fg=t["sidebar_fg"])
+        
         # Topbar
         self._topbar.config(bg=t["sidebar_bg"])
         self._topbar_title.config(bg=t["sidebar_bg"], fg=t["logo_fg"])
@@ -2054,6 +2047,17 @@ class InventoryApp(tk.Tk):
                 page.config(bg=t["content_bg"])
             except Exception:
                 pass
+
+    def _draw_switch(self, is_dark):
+        self._theme_switch.delete("all")
+        bg_color = "#3b82f6" if is_dark else "#cbd5e1"
+        self._theme_switch.create_arc(2, 2, 22, 22, start=90, extent=180, fill=bg_color, outline=bg_color)
+        self._theme_switch.create_arc(22, 2, 42, 22, start=-90, extent=180, fill=bg_color, outline=bg_color)
+        self._theme_switch.create_rectangle(12, 2, 32, 22, fill=bg_color, outline=bg_color)
+        if is_dark:
+            self._theme_switch.create_oval(24, 4, 40, 20, fill="#ffffff", outline="")
+        else:
+            self._theme_switch.create_oval(4, 4, 20, 20, fill="#ffffff", outline="")
 
     def _on_camera_change(self, _event=None):
         global _active_camera_index
