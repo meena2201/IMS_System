@@ -7,6 +7,7 @@ import pickle
 import sqlite3
 import threading
 import time
+from datetime import datetime
 import warnings
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -473,6 +474,14 @@ class HomePage(Page):
         self._cam_label = tk.Label(self, bg="#1a1a2e", width=PREVIEW_W, height=PREVIEW_H)
         self._cam_label.pack(pady=6)
 
+        # ── overdue alerts container ──
+        self._overdue_container = tk.Frame(self)
+        self._overdue_container.pack(fill="x", padx=16, pady=4)
+        self._overdue_frame = tk.Frame(self._overdue_container, bg="#ffebee", bd=1, relief=tk.SOLID)
+        self._overdue_label = tk.Label(self._overdue_frame, text="", fg="#c0392b", bg="#ffebee",
+                                       font=("Arial", 11, "bold"), justify="left")
+        self._overdue_label.pack(padx=10, pady=5, anchor="w")
+
         # ── today's history ──
         tk.Label(self, text="Today's History", font=("Arial", 13, "bold")).pack(anchor="w", padx=16)
         tree_frame = tk.Frame(self)
@@ -825,8 +834,55 @@ class HomePage(Page):
         if msg:
             self._status.config(text=msg, fg="red")
 
+    def _check_overdue(self):
+        if hasattr(self, '_overdue_timer'):
+            self.after_cancel(self._overdue_timer)
+        self._overdue_timer = self.after(60000, self._check_overdue)
+        
+        try:
+            with sqlite3.connect(self._db) as conn:
+                c = conn.cursor()
+                c.execute("""
+                    SELECT ph.product_id, ph.product_name, 
+                           COALESCE(u.user_name, ph.user_name), 
+                           ph.check_out_time 
+                    FROM product_history ph
+                    LEFT JOIN users u ON ph.user_id = u.user_id
+                    WHERE ph.check_in_time IS NULL
+                """)
+                rows = c.fetchall()
+        except Exception:
+            return
+            
+        now = datetime.now()
+        overdue_list = []
+        for pid, pname, uname, cout in rows:
+            try:
+                cout_dt = datetime.strptime(cout, "%Y-%m-%d %H:%M:%S")
+                # Overdue if it's from a previous day OR it's today and past 8:00 PM (20:00)
+                if cout_dt.date() < now.date() or (cout_dt.date() == now.date() and now.hour >= 20):
+                    overdue_list.append(f"• {pname} ({pid}) — Borrowed by {uname} at {cout_dt.strftime('%I:%M %p')}")
+            except Exception:
+                pass
+                
+        if overdue_list:
+            if len(overdue_list) > 5:
+                displayed = overdue_list[:5]
+                displayed.append(f"... and {len(overdue_list) - 5} more items overdue.")
+            else:
+                displayed = overdue_list
+                
+            msg = "⚠ OVERDUE ITEMS (Not returned by 8:00 PM):\n" + "\n".join(displayed)
+            self._overdue_label.config(text=msg)
+            if not self._overdue_frame.winfo_ismapped():
+                self._overdue_frame.pack(fill="x")
+        else:
+            if self._overdue_frame.winfo_ismapped():
+                self._overdue_frame.pack_forget()
+
     def _refresh_history(self):
         show_items(self._tree, db_file=self._db)
+        self._check_overdue()
 
 
 # ─── Login page ──────────────────────────────────────────────────────────────
@@ -1100,8 +1156,8 @@ class UserManagementPage(Page):
         if not name:
             messagebox.showwarning("Missing Name", "Please enter a name first.")
             return
-        if name.isdigit():
-            messagebox.showwarning("Invalid Name", "Name must be a real name, not a number.")
+        if not any(c.isalpha() for c in name):
+            messagebox.showwarning("Invalid Name", "Name must contain at least one letter.")
             return
         try:
             with sqlite3.connect(self._db) as conn:
@@ -1239,8 +1295,8 @@ class UserManagementPage(Page):
             self._register_btn.config(state=tk.NORMAL)
             self._status.config(text="Please fix the name and click 'Register User'.", fg="red")
             return
-        if name.isdigit():
-            messagebox.showwarning("Invalid Name", "Name must be a real name, not a number.")
+        if not any(c.isalpha() for c in name):
+            messagebox.showwarning("Invalid Name", "Name must contain at least one letter.")
             self._register_btn.config(state=tk.NORMAL)
             self._status.config(text="Please fix the name and click 'Register User'.", fg="red")
             return
@@ -1607,8 +1663,8 @@ class UserManagementPage(Page):
             if not new_name:
                 err_lbl.config(text="Name cannot be empty.")
                 return
-            if new_name.isdigit():
-                err_lbl.config(text="Name must be a real name, not a number.")
+            if not any(c.isalpha() for c in new_name):
+                err_lbl.config(text="Name must contain at least one letter.")
                 return
             try:
                 with sqlite3.connect(self._db) as conn:
@@ -1685,8 +1741,8 @@ class UserManagementPage(Page):
                         if not uid_s.isdigit():
                             errors.append(f"Bad ID: {uid_s!r}")
                             continue
-                        if not new_name or new_name.isdigit():
-                            errors.append(f"Skipped numeric name for ID {uid_s}")
+                        if not new_name or not any(c.isalpha() for c in new_name):
+                            errors.append(f"Skipped invalid name for ID {uid_s}")
                             continue
                         conn.execute("UPDATE users SET user_name=? WHERE user_id=?",
                                      (new_name, int(uid_s)))

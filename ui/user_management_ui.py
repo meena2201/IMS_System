@@ -145,6 +145,9 @@ def setup_tab2(parent_window, db_file='DB_FILE'):
         if not user_name or user_name == getattr(name_entry, 'placeholder', ''):
             messagebox.showwarning("Missing Name", "Please enter a name first.")
             return
+        if not any(c.isalpha() for c in user_name):
+            messagebox.showwarning("Invalid Name", "Name must contain at least one letter.")
+            return
             
         try:
             conn = sqlite3.connect(db_file)

@@ -277,6 +277,9 @@ def setp_tab2(parent_window):
             if not user_name:
                 messagebox.showwarning("Missing Name", "Please enter the Name.")
                 return
+            if not any(c.isalpha() for c in user_name):
+                messagebox.showwarning("Invalid Name", "Name must contain at least one letter.")
+                return
                 
             try:
                 conn_check = sqlite3.connect(DB_FILE)
