@@ -664,7 +664,16 @@ class HomePage(Page):
 
         elif self._mode == "face":
             if result:
-                uid, uname, hint, conf = result if len(result) == 4 else (*result, 0)
+                # The result tuple structure might vary, handle safely
+                uid, uname, hint, conf = None, None, "", 0
+                if isinstance(result, tuple):
+                    if len(result) == 4:
+                        uid, uname, hint, conf = result
+                    elif len(result) == 3:
+                        uid, uname, hint = result
+                    elif len(result) == 2:
+                        uid, uname = result
+                
                 # Update status with distance hint
                 if hint:
                     self._status.config(text=hint,
@@ -1270,7 +1279,7 @@ class UserManagementPage(Page):
             try:
                 # ── Dedup: majority-vote across all captured samples ──
                 # A match is only flagged if ≥ 3 of 4 samples point to the
-                # same registered user AND all pass a strict threshold (0.44).
+                # same registered user AND all pass a strict threshold.
                 # This prevents a single noisy sample or a look-alike from
                 # blocking a legitimate new registration.
                 known = get_known_encodings(db_file=self._db)
@@ -1278,7 +1287,7 @@ class UserManagementPage(Page):
                     from collections import Counter as _Counter
                     votes = _Counter()
                     for enc, _img in captured_copy:
-                        uid, ename = find_matching_face(known, enc, tolerance=0.44)
+                        uid, ename = find_matching_face(known, enc, tolerance=ENROLL_THRESHOLD)
                         if uid:
                             votes[(uid, ename)] += 1
                     if votes:
