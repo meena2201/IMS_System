@@ -3,7 +3,7 @@ Product manager UI module for managing products and generating QR codes.
 """
 import cv2
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import os
 import math
 import sqlite3
@@ -31,6 +31,7 @@ def setup_tab3(tab3, db_file='DB_FILE'):
             entry_pm.delete(0, tk.END)
             show_items_pm()
             status_label.config(text="Product added successfully!", fg="green")
+            messagebox.showinfo("Success", f"Product '{product_name}' added successfully!")
         else:
             status_label.config(text="Please enter a product name.", fg="red")
 
@@ -49,33 +50,13 @@ def setup_tab3(tab3, db_file='DB_FILE'):
         for item in items:
             tree_pm.insert("", tk.END, values=item)
         
-        if modify_button['state'] == tk.NORMAL:
-            selected_item = tree_pm.selection()
-            if selected_item:
-                product_name = tree_pm.item(selected_item)['values'][1]
-                entry_pm.delete(0, tk.END)
-                entry_pm.insert(0, product_name)
-            else:
-                entry_pm.delete(0, tk.END)
-        else:
-            entry_pm.delete(0, tk.END)
-
-    def modify_item():
-        """Modify the selected product name."""
         selected_item = tree_pm.selection()
         if selected_item:
-            item_id = tree_pm.item(selected_item)['values'][0].replace('slof_', '')
-            new_product_name = entry_pm.get()
-            if new_product_name:
-                cursor.execute("UPDATE items SET product_name = ? WHERE id = ?", (new_product_name, item_id))
-                conn.commit()
-                show_items_pm()
-                entry_pm.delete(0, tk.END)
-                status_label.config(text="Product modified successfully!", fg="green")
-            else:
-                status_label.config(text="Please enter a new product name.", fg="red")
+            product_name = tree_pm.item(selected_item)['values'][1]
+            entry_pm.delete(0, tk.END)
+            entry_pm.insert(0, product_name)
         else:
-            status_label.config(text="Please select an item to modify.", fg="red")
+            entry_pm.delete(0, tk.END)
 
     def generate_qr():
         """Generate and save QR code for the selected product."""
@@ -154,13 +135,110 @@ def setup_tab3(tab3, db_file='DB_FILE'):
         """Handle item selection in the tree view."""
         selected_item = tree_pm.selection()
         if selected_item:
-            modify_button.config(state=tk.NORMAL)
             product_name = tree_pm.item(selected_item)['values'][1]
             entry_pm.delete(0, tk.END)
             entry_pm.insert(0, product_name)
         else:
-            modify_button.config(state=tk.DISABLED)
             entry_pm.delete(0, tk.END)
+
+    def on_item_double_click(event):
+        selected_item = tree_pm.selection()
+        if not selected_item:
+            return
+            
+        item_values = tree_pm.item(selected_item)['values']
+        product_id = str(item_values[0])
+        product_name = str(item_values[1])
+        
+        dlg = tk.Toplevel(tab3)
+        dlg.title(product_id)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+        
+        tk.Label(dlg, text="Product Details", font=("Arial", 14, "bold")).pack(pady=10)
+        
+        f = tk.Frame(dlg, padx=20, pady=10)
+        f.pack(fill="both", expand=True)
+        
+        tk.Label(f, text="Product ID:", font=("Arial", 11, "bold")).grid(row=0, column=0, sticky="e", pady=5, padx=5)
+        tk.Label(f, text=product_id, font=("Arial", 11)).grid(row=0, column=1, sticky="w", pady=5, padx=5)
+        
+        tk.Label(f, text="Product Name:", font=("Arial", 11, "bold")).grid(row=1, column=0, sticky="e", pady=5, padx=5)
+        
+        name_var = tk.StringVar(value=product_name)
+        name_entry = tk.Entry(f, textvariable=name_var, font=("Arial", 11), state="disabled", width=25)
+        name_entry.grid(row=1, column=1, sticky="w", pady=5, padx=5)
+        
+        btn_frame = tk.Frame(dlg, pady=10)
+        btn_frame.pack()
+        
+        def _edit():
+            name_entry.config(state="normal")
+            name_entry.focus()
+            edit_btn.config(text="Save Changes", command=_save, fg="green")
+            
+        def _save():
+            new_name = name_var.get().strip()
+            if not new_name:
+                messagebox.showwarning("Warning", "Product name cannot be empty.", parent=dlg)
+                return
+            item_id = product_id.replace("slof_", "")
+            cursor.execute("UPDATE items SET product_name=? WHERE id=?", (new_name, item_id))
+            conn.commit()
+            show_items_pm()
+            status_label.config(text="Product modified successfully!", fg="green")
+            messagebox.showinfo("Success", "Product updated successfully.", parent=dlg)
+            dlg.destroy()
+            
+        def _remove():
+            if messagebox.askyesno("Confirm Remove", f"Are you sure you want to remove this product permanently?\n\nProduct: {product_name}", parent=dlg):
+                item_id = product_id.replace("slof_", "")
+                cursor.execute("DELETE FROM items WHERE id=?", (item_id,))
+                conn.commit()
+                show_items_pm()
+                status_label.config(text="Product removed successfully!", fg="red")
+                messagebox.showinfo("Removed", "The product was removed.", parent=dlg)
+                dlg.destroy()
+
+        edit_btn = tk.Button(btn_frame, text="Edit", command=_edit, width=12)
+        edit_btn.grid(row=0, column=0, padx=10)
+        
+        remove_btn = tk.Button(btn_frame, text="Remove", command=_remove, width=12, fg="red")
+        remove_btn.grid(row=0, column=1, padx=10)
+
+        def _download_qr():
+            import os, math, qrcode
+            from PIL import Image, ImageFont, ImageDraw
+            
+            box_size = max(1, math.ceil(25 / 0.264583) // 21)
+            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=box_size, border=2)
+            qr.add_data(product_id)
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+            
+            try:
+                font = ImageFont.truetype("calibri.ttf", 14)
+            except Exception:
+                font = ImageFont.load_default()
+                
+            d = ImageDraw.Draw(img)
+            tb = d.textbbox((0, 0), product_id, font=font)
+            tw, th = tb[2]-tb[0], tb[3]-tb[1]
+            iw, ih = img.size
+            new_img = Image.new("RGB", (iw, ih + th + 4), "white")
+            new_img.paste(img, (0, 0))
+            ImageDraw.Draw(new_img).text(((iw-tw)//2, ih), product_id, font=font, fill="black")
+            
+            new_img.show()
+            
+            downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+            os.makedirs(downloads_dir, exist_ok=True)
+            path = os.path.join(downloads_dir, f"{product_id}.png")
+            new_img.save(path)
+            messagebox.showinfo("Downloaded", f"QR Code saved to Downloads folder:\n{path}", parent=dlg)
+
+        dl_btn = tk.Button(dlg, text="Download QR Code", command=_download_qr, width=20)
+        dl_btn.pack(pady=(0, 10))
 
     # Layout for Tab 3
     frame = tk.Frame(tab3)
@@ -201,9 +279,6 @@ def setup_tab3(tab3, db_file='DB_FILE'):
     add_button = tk.Button(button_frame, text="Add Product", command=add_item)
     add_button.pack(side="left", padx=5)
 
-    modify_button = tk.Button(button_frame, text="Modify Name", state=tk.DISABLED, command=modify_item)
-    modify_button.pack(side="left", padx=5)
-
     tree_frame = tk.Frame(frame)
     tree_frame.pack(fill="both", expand=True)
 
@@ -235,8 +310,9 @@ def setup_tab3(tab3, db_file='DB_FILE'):
     status_label.pack(pady=10)
 
     show_items_pm()
-    entry_pm.bind("<Return>", lambda event: modify_item() if modify_button['state'] == tk.NORMAL else add_item())
+    entry_pm.bind("<Return>", lambda event: add_item())
     tree_pm.bind('<<TreeviewSelect>>', on_item_select)
+    tree_pm.bind('<Double-1>', on_item_double_click)
 
     # Escape key handling
     def clear_entry_focus(event=None):
@@ -264,7 +340,7 @@ def setup_tab3(tab3, db_file='DB_FILE'):
 
     def on_click(event):
         widget = event.widget
-        if widget not in (entry_pm, search_entry, add_button, modify_button, search_button, refresh_button, qr_button, size_combobox):
+        if widget not in (entry_pm, search_entry, add_button, search_button, refresh_button, qr_button, size_combobox):
             entry_pm.selection_clear()
             search_entry.selection_clear()
             frame.focus_set()

@@ -1922,13 +1922,9 @@ class ProductManagerPage(Page):
         ef.pack(fill="x")
         self._entry = tk.Entry(ef, width=30, font=("Arial", 11))
         self._entry.pack(side="left", padx=(0, 8))
-        self._entry.bind("<Return>", lambda e: self._add_or_modify())
+        self._entry.bind("<Return>", lambda e: self._add_item())
         tk.Button(ef, text="➕ Add", bg="#1abc9c", fg="white", relief=tk.FLAT,
                   command=self._add_item).pack(side="left", padx=4)
-        self._mod_btn = tk.Button(ef, text="✏ Modify", bg="#f39c12", fg="white",
-                                   relief=tk.FLAT, state=tk.DISABLED,
-                                   command=self._modify_item)
-        self._mod_btn.pack(side="left", padx=4)
 
         # search row
         sf = tk.Frame(frame)
@@ -1953,6 +1949,7 @@ class ProductManagerPage(Page):
         self._tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
         self._tree.bind("<<TreeviewSelect>>", self._on_select)
+        self._tree.bind("<Double-1>", self._on_double_click)
 
         # QR row
         qf = tk.Frame(frame)
@@ -1989,30 +1986,8 @@ class ProductManagerPage(Page):
         self._conn.commit()
         self._entry.delete(0, tk.END)
         self._status.config(text="Product added.", fg="#27ae60")
+        messagebox.showinfo("Success", f"Product '{name}' added successfully!")
         self._refresh()
-
-    def _modify_item(self):
-        sel = self._tree.selection()
-        if not sel:
-            return
-        pid = self._tree.item(sel[0])["values"][0]
-        new_name = self._entry.get().strip()
-        if not new_name:
-            self._status.config(text="Enter new product name.", fg="red")
-            return
-        iid = str(pid).replace("slof_", "")
-        self._cursor.execute("UPDATE items SET product_name=? WHERE id=?", (new_name, iid))
-        self._conn.commit()
-        self._entry.delete(0, tk.END)
-        self._mod_btn.config(state=tk.DISABLED)
-        self._status.config(text="Product modified.", fg="#27ae60")
-        self._refresh()
-
-    def _add_or_modify(self):
-        if self._mod_btn["state"] == tk.NORMAL:
-            self._modify_item()
-        else:
-            self._add_item()
 
     def _refresh(self):
         self._search_var.set("")
@@ -2037,12 +2012,108 @@ class ProductManagerPage(Page):
     def _on_select(self, _event=None):
         sel = self._tree.selection()
         if sel:
-            self._mod_btn.config(state=tk.NORMAL)
             name = self._tree.item(sel[0])["values"][1]
             self._entry.delete(0, tk.END)
             self._entry.insert(0, name)
-        else:
-            self._mod_btn.config(state=tk.DISABLED)
+
+    def _on_double_click(self, event):
+        sel = self._tree.selection()
+        if not sel:
+            return
+        
+        item = self._tree.item(sel[0])
+        pid = item["values"][0]
+        pname = item["values"][1]
+        
+        dlg = tk.Toplevel(self)
+        dlg.title(pid)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+        
+        tk.Label(dlg, text="Product Details", font=("Arial", 14, "bold")).pack(pady=10)
+        
+        f = tk.Frame(dlg, padx=20, pady=10)
+        f.pack(fill="both", expand=True)
+        
+        tk.Label(f, text="Product ID:", font=("Arial", 11, "bold")).grid(row=0, column=0, sticky="e", pady=5, padx=5)
+        tk.Label(f, text=pid, font=("Arial", 11)).grid(row=0, column=1, sticky="w", pady=5, padx=5)
+        
+        tk.Label(f, text="Product Name:", font=("Arial", 11, "bold")).grid(row=1, column=0, sticky="e", pady=5, padx=5)
+        
+        name_var = tk.StringVar(value=pname)
+        name_entry = tk.Entry(f, textvariable=name_var, font=("Arial", 11), state="disabled", width=25)
+        name_entry.grid(row=1, column=1, sticky="w", pady=5, padx=5)
+        
+        btn_frame = tk.Frame(dlg, pady=10)
+        btn_frame.pack()
+        
+        def _edit():
+            name_entry.config(state="normal")
+            name_entry.focus()
+            edit_btn.config(text="Save Changes", command=_save, bg="#27ae60")
+            
+        def _save():
+            new_name = name_var.get().strip()
+            if not new_name:
+                messagebox.showwarning("Warning", "Product name cannot be empty.", parent=dlg)
+                return
+            item_id = str(pid).replace("slof_", "")
+            self._cursor.execute("UPDATE items SET product_name=? WHERE id=?", (new_name, item_id))
+            self._conn.commit()
+            self._refresh()
+            self._status.config(text="Product modified.", fg="#27ae60")
+            messagebox.showinfo("Success", "Product updated successfully.", parent=dlg)
+            dlg.destroy()
+            
+        def _remove():
+            if messagebox.askyesno("Confirm Remove", f"Are you sure you want to remove this product permanently?\n\nProduct: {pname}", parent=dlg):
+                item_id = str(pid).replace("slof_", "")
+                self._cursor.execute("DELETE FROM items WHERE id=?", (item_id,))
+                self._conn.commit()
+                self._refresh()
+                self._status.config(text="Product removed.", fg="#e74c3c")
+                messagebox.showinfo("Removed", "The product was removed.", parent=dlg)
+                dlg.destroy()
+
+        edit_btn = tk.Button(btn_frame, text="Edit", bg="#f39c12", fg="white", font=("Arial", 11), relief=tk.FLAT, command=_edit, width=12)
+        edit_btn.grid(row=0, column=0, padx=10)
+        
+        remove_btn = tk.Button(btn_frame, text="Remove", bg="#e74c3c", fg="white", font=("Arial", 11), relief=tk.FLAT, command=_remove, width=12)
+        remove_btn.grid(row=0, column=1, padx=10)
+
+        def _download_qr():
+            import os, math, qrcode
+            from PIL import Image, ImageFont, ImageDraw
+            
+            box_size = max(1, math.ceil(25 / 0.264583) // 21)
+            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=box_size, border=2)
+            qr.add_data(pid)
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+            
+            try:
+                font = ImageFont.truetype("calibri.ttf", 14)
+            except Exception:
+                font = ImageFont.load_default()
+                
+            d = ImageDraw.Draw(img)
+            tb = d.textbbox((0, 0), pid, font=font)
+            tw, th = tb[2]-tb[0], tb[3]-tb[1]
+            iw, ih = img.size
+            new_img = Image.new("RGB", (iw, ih + th + 4), "white")
+            new_img.paste(img, (0, 0))
+            ImageDraw.Draw(new_img).text(((iw-tw)//2, ih), pid, font=font, fill="black")
+            
+            new_img.show()
+            
+            downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+            os.makedirs(downloads_dir, exist_ok=True)
+            path = os.path.join(downloads_dir, f"{pid}.png")
+            new_img.save(path)
+            messagebox.showinfo("Downloaded", f"QR Code saved to Downloads folder:\n{path}", parent=dlg)
+
+        dl_btn = tk.Button(dlg, text="⬇ Download QR Code", bg="#9b59b6", fg="white", font=("Arial", 11), relief=tk.FLAT, command=_download_qr, width=20)
+        dl_btn.pack(pady=(0, 10))
 
     def _generate_qr(self):
         sel = self._tree.selection()
