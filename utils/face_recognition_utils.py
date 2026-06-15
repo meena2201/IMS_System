@@ -73,8 +73,9 @@ def get_face_embedding(face):
 
 # Cosine similarity threshold for a VALID match (higher = stricter).
 # ArcFace embeddings: same person typically > 0.35, different person < 0.25.
-VERIFY_THRESHOLD = 0.40   # verification (check-in/out) — strict
-ENROLL_THRESHOLD = 0.38   # dedup during registration — slightly looser
+# Increased to prevent false positives for unregistered faces, especially children
+VERIFY_THRESHOLD = 0.55   # verification (check-in/out) — strict
+ENROLL_THRESHOLD = 0.50   # dedup during registration — slightly looser
 
 EMBEDDING_DIM = 512
 

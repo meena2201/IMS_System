@@ -7,7 +7,6 @@ import pickle
 import sqlite3
 import threading
 import time
-from datetime import datetime
 import warnings
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -47,49 +46,24 @@ def _open_camera(index):
     return cap
 
 
-def _detect_cameras(max_test=10):
+def _detect_cameras(max_test=5):
     """
     Return list of (index, label) for all cameras found.
-    Filters out phantom/metadata nodes by checking Linux sysfs, 
-    and reads the actual device name for the dropdown.
+    Prefers USB cameras (higher indices) by listing them first.
     """
     found = []
     for i in range(max_test):
-        sys_name = ""
-        # On Linux, skip metadata nodes (index > 0) to prevent duplicate/phantom cameras
-        if os.name == "posix":
-            index_file = f"/sys/class/video4linux/video{i}/index"
-            name_file = f"/sys/class/video4linux/video{i}/name"
-            if os.path.exists(index_file):
-                try:
-                    with open(index_file, "r") as f:
-                        if f.read().strip() != "0":
-                            continue  # Skip metadata/IR nodes
-                except Exception:
-                    pass
-            if os.path.exists(name_file):
-                try:
-                    with open(name_file, "r") as f:
-                        sys_name = f.read().strip()
-                except Exception:
-                    pass
-
         cap = cv2.VideoCapture(i, _CAM_BACKEND)
         if cap.isOpened():
-            # Test if it can actually read a frame
-            ret, frame = cap.read()
-            if ret and frame is not None:
-                found.append((i, sys_name))
+            found.append(i)
             cap.release()
 
     if not found:
         return [(0, "Camera 0 (default)")]
 
     labels = []
-    for i, sys_name in found:
-        if sys_name:
-            label = f"Camera {i} ({sys_name})"
-        elif i == 0:
+    for i in found:
+        if i == 0:
             label = f"Camera {i} (Built-in)"
         else:
             label = f"Camera {i} (USB Webcam)"
@@ -125,48 +99,70 @@ THEMES = {
         "cam_bg":         "#05164d",
     },
     "Dark": {
-        "sidebar_bg":     "#0f172a",
-        "sidebar_fg":     "#f8fafc",
-        "sidebar_active": "#3b82f6",
-        "sidebar_hover":  "#3b82f6",
-        "sidebar_sub_bg": "#1e293b",
-        "logo_fg":        "#38bdf8",
-        "logo_sub_fg":    "#94a3b8",
-        "content_bg":     "#020617",
-        "header_fg":      "#f8fafc",
-        "btn_primary":    "#3b82f6",
+        "sidebar_bg":     "#1a1a2e",
+        "sidebar_fg":     "#e0e0e0",
+        "sidebar_active": "#1abc9c",
+        "sidebar_hover":  "#1abc9c",
+        "sidebar_sub_bg": "#16213e",
+        "logo_fg":        "#1abc9c",
+        "logo_sub_fg":    "#95a5a6",
+        "content_bg":     "#0f3460",
+        "header_fg":      "#e0e0e0",
+        "btn_primary":    "#1abc9c",
         "btn_primary_fg": "#ffffff",
-        "btn_secondary":  "#334155",
+        "btn_secondary":  "#2980b9",
         "btn_secondary_fg":"#ffffff",
-        "btn_danger":     "#ef4444",
-        "btn_warning":    "#f59e0b",
+        "btn_danger":     "#e74c3c",
+        "btn_warning":    "#f39c12",
         "btn_warning_fg": "#ffffff",
-        "status_ok":      "#10b981",
-        "status_err":     "#ef4444",
-        "status_info":    "#3b82f6",
-        "cam_bg":         "#0f172a",
+        "status_ok":      "#1abc9c",
+        "status_err":     "#e74c3c",
+        "status_info":    "#3498db",
+        "cam_bg":         "#1a1a2e",
     },
     "Light": {
-        "sidebar_bg":     "#f8fafc",
-        "sidebar_fg":     "#334155",
-        "sidebar_active": "#2563eb",
-        "sidebar_hover":  "#2563eb",
-        "sidebar_sub_bg": "#f1f5f9",
-        "logo_fg":        "#0f172a",
-        "logo_sub_fg":    "#64748b",
+        "sidebar_bg":     "#2c3e50",
+        "sidebar_fg":     "#ffffff",
+        "sidebar_active": "#3498db",
+        "sidebar_hover":  "#3498db",
+        "sidebar_sub_bg": "#34495e",
+        "logo_fg":        "#ffffff",
+        "logo_sub_fg":    "#bdc3c7",
         "content_bg":     "#ffffff",
-        "header_fg":      "#0f172a",
-        "btn_primary":    "#2563eb",
+        "header_fg":      "#2c3e50",
+        "btn_primary":    "#3498db",
         "btn_primary_fg": "#ffffff",
-        "btn_secondary":  "#e2e8f0",
-        "btn_secondary_fg":"#334155",
-        "btn_danger":     "#ef4444",
-        "btn_warning":    "#f59e0b",
+        "btn_secondary":  "#2c3e50",
+        "btn_secondary_fg":"#ffffff",
+        "btn_danger":     "#e74c3c",
+        "btn_warning":    "#f39c12",
         "btn_warning_fg": "#ffffff",
-        "status_ok":      "#10b981",
-        "status_err":     "#ef4444",
-        "status_info":    "#2563eb",
-        "cam_bg":         "#f1f5f9",
+        "status_ok":      "#27ae60",
+        "status_err":     "#e74c3c",
+        "status_info":    "#2980b9",
+        "cam_bg":         "#1a1a2e",
+    },
+    "Green": {
+        "sidebar_bg":     "#1b4332",
+        "sidebar_fg":     "#d8f3dc",
+        "sidebar_active": "#52b788",
+        "sidebar_hover":  "#52b788",
+        "sidebar_sub_bg": "#2d6a4f",
+        "logo_fg":        "#95d5b2",
+        "logo_sub_fg":    "#74c69d",
+        "content_bg":     "#f8fff9",
+        "header_fg":      "#1b4332",
+        "btn_primary":    "#52b788",
+        "btn_primary_fg": "#ffffff",
+        "btn_secondary":  "#1b4332",
+        "btn_secondary_fg":"#ffffff",
+        "btn_danger":     "#d62828",
+        "btn_warning":    "#f4a261",
+        "btn_warning_fg": "#ffffff",
+        "status_ok":      "#2d6a4f",
+        "status_err":     "#d62828",
+        "status_info":    "#52b788",
+        "cam_bg":         "#1b4332",
     },
 }
 
@@ -261,8 +257,8 @@ def _frame_to_photoimage(frame, w=PREVIEW_W, h=PREVIEW_H):
 
 
 # Optimal face-height ratio range (face height / frame height)
-_DIST_MIN = 0.20   # too far below this
-_DIST_MAX = 0.65   # too close above this
+_DIST_MIN = 0.18   # too far below this
+_DIST_MAX = 0.60   # too close above this
 
 
 def _draw_distance_guide(bgr, locs):
@@ -274,8 +270,8 @@ def _draw_distance_guide(bgr, locs):
 
     # ── guide oval in centre ──
     cx, cy = w // 2, int(h * 0.45)
-    ow, oh = int(w * 0.18), int(h * 0.40)
-    cv2.ellipse(bgr, (cx, cy), (ow, oh), 0, 0, 360, (200, 200, 200), 2)
+    ow, oh = int(w * 0.28), int(h * 0.38)
+    cv2.ellipse(bgr, (cx, cy), (ow, oh), 0, 0, 360, (180, 180, 180), 1)
 
     if not locs:
         cv2.putText(bgr, "No face detected", (10, 30),
@@ -480,14 +476,6 @@ class HomePage(Page):
         self._cam_label = tk.Label(self, bg="#1a1a2e", width=PREVIEW_W, height=PREVIEW_H)
         self._cam_label.pack(pady=6)
 
-        # ── overdue alerts container ──
-        self._overdue_container = tk.Frame(self)
-        self._overdue_container.pack(fill="x", padx=16, pady=4)
-        self._overdue_frame = tk.Frame(self._overdue_container, bg="#ffebee", bd=1, relief=tk.SOLID)
-        self._overdue_label = tk.Label(self._overdue_frame, text="", fg="#c0392b", bg="#ffebee",
-                                       font=("Arial", 11, "bold"), justify="left")
-        self._overdue_label.pack(padx=10, pady=5, anchor="w")
-
         # ── today's history ──
         tk.Label(self, text="Today's History", font=("Arial", 13, "bold")).pack(anchor="w", padx=16)
         tree_frame = tk.Frame(self)
@@ -605,41 +593,10 @@ class HomePage(Page):
         Returns (annotated_bgr, (uid, uname, hint, conf) | (None, None, hint, 0)).
         conf = cosine similarity scaled to 0-100.
         """
-        h, w = bgr.shape[:2]
-        cx, cy = w // 2, int(h * 0.45)
-        ow, oh = int(w * 0.18), int(h * 0.40)
-
         faces = detect_faces(bgr)
-        
-        valid_faces = []
-        bounds_violated = False
-        for f in faces:
-            left, top, right, bottom = f.bbox
-            face_cx = (left + right) / 2
-            face_cy = (top + bottom) / 2
-            center_dist = ((face_cx - cx) ** 2 / (ow ** 2)) + ((face_cy - cy) ** 2 / (oh ** 2))
-            
-            # STRICT CHECK: Ensure the ENTIRE bounding box fits inside the oval's rectangular bounds
-            if center_dist <= 0.15 and left >= cx - ow and right <= cx + ow and top >= cy - oh and bottom <= cy + oh:
-                valid_faces.append(f)
-            elif center_dist <= 1.5:
-                bounds_violated = True
-        faces = valid_faces
-
-        mask = np.zeros((h, w), dtype=np.uint8)
-        cv2.ellipse(mask, (cx, cy), (ow, oh), 0, 0, 360, 255, -1)
-        blurred_bgr = cv2.GaussianBlur(bgr, (51, 51), 0)
-        bgr = np.where(mask[:, :, None] == 255, bgr, blurred_bgr)
-
         locs  = faces_to_locations(faces)
         bgr, hint, _ = _draw_distance_guide(bgr, locs)
         result = None
-
-        if not faces and bounds_violated:
-            hint = "Center your full face strictly inside the oval"
-            (tw, th), _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.70, 2)
-            cv2.rectangle(bgr, (8, 8), (tw + 20, 45), (0, 0, 0), -1)
-            cv2.putText(bgr, hint, (12, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.70, (0, 165, 255), 2)
 
         if faces:
             h = bgr.shape[0]
@@ -888,55 +845,8 @@ class HomePage(Page):
         if msg:
             self._status.config(text=msg, fg="red")
 
-    def _check_overdue(self):
-        if hasattr(self, '_overdue_timer'):
-            self.after_cancel(self._overdue_timer)
-        self._overdue_timer = self.after(60000, self._check_overdue)
-        
-        try:
-            with sqlite3.connect(self._db) as conn:
-                c = conn.cursor()
-                c.execute("""
-                    SELECT ph.product_id, ph.product_name, 
-                           COALESCE(u.user_name, ph.user_name), 
-                           ph.check_out_time 
-                    FROM product_history ph
-                    LEFT JOIN users u ON ph.user_id = u.user_id
-                    WHERE ph.check_in_time IS NULL
-                """)
-                rows = c.fetchall()
-        except Exception:
-            return
-            
-        now = datetime.now()
-        overdue_list = []
-        for pid, pname, uname, cout in rows:
-            try:
-                cout_dt = datetime.strptime(cout, "%Y-%m-%d %H:%M:%S")
-                # Overdue if it's from a previous day OR it's today and past 8:00 PM (20:00)
-                if cout_dt.date() < now.date() or (cout_dt.date() == now.date() and now.hour >= 20):
-                    overdue_list.append(f"• {pname} ({pid}) — Borrowed by {uname} at {cout_dt.strftime('%I:%M %p')}")
-            except Exception:
-                pass
-                
-        if overdue_list:
-            if len(overdue_list) > 5:
-                displayed = overdue_list[:5]
-                displayed.append(f"... and {len(overdue_list) - 5} more items overdue.")
-            else:
-                displayed = overdue_list
-                
-            msg = "⚠ OVERDUE ITEMS (Not returned by 8:00 PM):\n" + "\n".join(displayed)
-            self._overdue_label.config(text=msg)
-            if not self._overdue_frame.winfo_ismapped():
-                self._overdue_frame.pack(fill="x")
-        else:
-            if self._overdue_frame.winfo_ismapped():
-                self._overdue_frame.pack_forget()
-
     def _refresh_history(self):
         show_items(self._tree, db_file=self._db)
-        self._check_overdue()
 
 
 # ─── Login page ──────────────────────────────────────────────────────────────
@@ -1107,17 +1017,15 @@ class UserManagementPage(Page):
         # ---- form fields ----
         form = tk.Frame(left)
         form.pack(fill="x", pady=2)
-        
         for r, (lbl, attr) in enumerate([
             ("Name:",   "_name_var"),
             ("School:", "_school_var"),
             ("Place:",  "_place_var"),
         ]):
-            tk.Label(form, text=lbl, width=8, anchor="e").grid(row=r, column=0, pady=3, padx=4)
+            tk.Label(form, text=lbl, width=7, anchor="e").grid(row=r, column=0, pady=3, padx=4)
             var = tk.StringVar()
             setattr(self, attr, var)
             ent = tk.Entry(form, textvariable=var, width=28, font=("Arial", 11))
-            
             ent.grid(row=r, column=1, pady=3, padx=4, sticky="w")
             if attr == "_name_var":
                 self._name_entry = ent
@@ -1169,26 +1077,8 @@ class UserManagementPage(Page):
         tk.Label(hdr, text="User List", font=("Arial", 14, "bold")).pack(side="left")
         tk.Button(hdr, text="🔄", bg="#3498db", fg="white", relief=tk.FLAT, width=3,
                   command=self._refresh_list).pack(side="right")
-
-        # ── search and sort ──
-        sf = tk.Frame(right)
-        sf.pack(fill="x", pady=(0, 4))
-        
-        tk.Label(sf, text="Search:").pack(side="left")
-        self._search_var = tk.StringVar()
-        self._search_var.trace_add("write", lambda *args: self._refresh_list())
-        tk.Entry(sf, textvariable=self._search_var, width=15).pack(side="left", padx=(2, 10))
-        
-        tk.Label(sf, text="Sort by:").pack(side="left")
-        self._sort_var = tk.StringVar(value="ID (Desc)")
-        sort_cb = ttk.Combobox(sf, textvariable=self._sort_var, 
-                               values=["ID (Desc)", "ID (Asc)", "Name (A-Z)", "School (A-Z)"], 
-                               state="readonly", width=12)
-        sort_cb.pack(side="left", padx=2)
-        sort_cb.bind("<<ComboboxSelected>>", lambda e: self._refresh_list())
-
-        self._count_label = tk.Label(sf, text="", font=("Arial", 9), fg="#7f8c8d")
-        self._count_label.pack(side="right")
+        self._count_label = tk.Label(right, text="", font=("Arial", 9), fg="#7f8c8d")
+        self._count_label.pack(anchor="w")
 
         tf = tk.Frame(right)
         tf.pack(fill="both", expand=True)
@@ -1228,41 +1118,9 @@ class UserManagementPage(Page):
         InsightFace detection for live preview + distance guide.
         Stores latest faces for the Capture button.
         """
-        h, w = bgr.shape[:2]
-        cx, cy = w // 2, int(h * 0.45)
-        ow, oh = int(w * 0.18), int(h * 0.40)
-
         faces = detect_faces(bgr)
-        
-        valid_faces = []
-        bounds_violated = False
-        for f in faces:
-            left, top, right, bottom = f.bbox
-            face_cx = (left + right) / 2
-            face_cy = (top + bottom) / 2
-            center_dist = ((face_cx - cx) ** 2 / (ow ** 2)) + ((face_cy - cy) ** 2 / (oh ** 2))
-            
-            # STRICT CHECK: Ensure the ENTIRE bounding box fits inside the oval's rectangular bounds
-            if center_dist <= 0.15 and left >= cx - ow and right <= cx + ow and top >= cy - oh and bottom <= cy + oh:
-                valid_faces.append(f)
-            elif center_dist <= 1.5:
-                bounds_violated = True
-        faces = valid_faces
-
-        mask = np.zeros((h, w), dtype=np.uint8)
-        cv2.ellipse(mask, (cx, cy), (ow, oh), 0, 0, 360, 255, -1)
-        blurred_bgr = cv2.GaussianBlur(bgr, (51, 51), 0)
-        bgr = np.where(mask[:, :, None] == 255, bgr, blurred_bgr)
-
         locs  = faces_to_locations(faces)
         bgr, hint, _ = _draw_distance_guide(bgr, locs)
-        
-        if not faces and bounds_violated:
-            hint = "Center your full face strictly inside the oval"
-            (tw, th), _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.70, 2)
-            cv2.rectangle(bgr, (8, 8), (tw + 20, 45), (0, 0, 0), -1)
-            cv2.putText(bgr, hint, (12, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.70, (0, 165, 255), 2)
-
         with self._lock:
             self._face_detected = bool(faces)
             self._cur_faces = faces
@@ -1277,18 +1135,11 @@ class UserManagementPage(Page):
     def _start_camera(self):
         name = self._name_var.get().strip()
         if not name:
-            messagebox.showwarning("Missing Name", "Please enter a name first.")
+            self._status.config(text="Please enter a name first.", fg="red")
             return
-        if not any(c.isalpha() for c in name):
-            messagebox.showwarning("Invalid Name", "Name must contain at least one letter.")
+        if name.isdigit():
+            self._status.config(text="Name must be a real name, not a number.", fg="red")
             return
-        try:
-            with sqlite3.connect(self._db) as conn:
-                if conn.execute("SELECT user_id FROM users WHERE LOWER(user_name) = LOWER(?)", (name,)).fetchone():
-                    messagebox.showwarning("Duplicate Name", "This username already exists. Please add an initial or last name.")
-                    return
-        except Exception:
-            pass
         self._running = True
         self._captured = []
         self._dist_hint = ""
@@ -1333,7 +1184,7 @@ class UserManagementPage(Page):
         if not face_detected or not faces:
             self._status.config(text="No face detected — align your face with the oval.", fg="red")
             return
-        if "CLOSER" in hint or "BACK" in hint or "Center" in hint:
+        if "CLOSER" in hint or "BACK" in hint:
             self._status.config(text=f"⚠  {hint} before capturing.", fg="#e67e22")
             return
         # Use largest face (first after sort by area)
@@ -1408,28 +1259,16 @@ class UserManagementPage(Page):
         # Validate before opening the window
         if not name:
             messagebox.showwarning("Missing Name", "Please enter the user's name.")
-            self._register_btn.config(state=tk.NORMAL)
-            self._status.config(text="Please fix the name and click 'Register User'.", fg="red")
+            self._start_btn.config(state=tk.NORMAL)
             return
-        if not any(c.isalpha() for c in name):
-            messagebox.showwarning("Invalid Name", "Name must contain at least one letter.")
-            self._register_btn.config(state=tk.NORMAL)
-            self._status.config(text="Please fix the name and click 'Register User'.", fg="red")
+        if name.isdigit():
+            messagebox.showwarning("Invalid Name", "Name must be a real name, not a number.")
+            self._start_btn.config(state=tk.NORMAL)
             return
         if not self._captured:
             messagebox.showwarning("No Face Data", "No face samples found. Please capture again.")
             self._start_btn.config(state=tk.NORMAL)
             return
-            
-        try:
-            with sqlite3.connect(self._db) as conn:
-                if conn.execute("SELECT user_id FROM users WHERE LOWER(user_name) = LOWER(?)", (name,)).fetchone():
-                    messagebox.showwarning("Duplicate Name", "This username already exists. Please add an initial or last name.")
-                    self._register_btn.config(state=tk.NORMAL)
-                    self._status.config(text="Please fix the name and click 'Register User'.", fg="red")
-                    return
-        except Exception:
-            pass
 
         # Use inline progress bar
         self._progress.config(mode="indeterminate")
@@ -1674,38 +1513,15 @@ class UserManagementPage(Page):
     def _refresh_list(self):
         for i in self._tree.get_children():
             self._tree.delete(i)
-            
-        search_query = self._search_var.get().strip().lower()
-        sort_opt = self._sort_var.get()
-        
-        order_by = "user_id DESC"
-        if sort_opt == "ID (Asc)":
-            order_by = "user_id ASC"
-        elif sort_opt == "Name (A-Z)":
-            order_by = "user_name COLLATE NOCASE ASC"
-        elif sort_opt == "School (A-Z)":
-            order_by = "school COLLATE NOCASE ASC"
-            
         try:
             with sqlite3.connect(self._db) as conn:
-                if search_query:
-                    # Using LIKE for search
-                    wildcard = f"%{search_query}%"
-                    rows = conn.execute(
-                        f"SELECT user_id, user_name, COALESCE(school,''), COALESCE(place,''), type "
-                        f"FROM users "
-                        f"WHERE LOWER(user_name) LIKE ? OR CAST(user_id AS TEXT) LIKE ? OR LOWER(COALESCE(school,'')) LIKE ? "
-                        f"ORDER BY {order_by}",
-                        (wildcard, wildcard, wildcard)
-                    ).fetchall()
-                else:
-                    rows = conn.execute(
-                        f"SELECT user_id, user_name, COALESCE(school,''), COALESCE(place,''), type "
-                        f"FROM users ORDER BY {order_by}"
-                    ).fetchall()
+                rows = conn.execute(
+                    "SELECT user_id, user_name, COALESCE(school,''), COALESCE(place,''), type "
+                    "FROM users ORDER BY user_id DESC"
+                ).fetchall()
             for r in rows:
                 self._tree.insert("", "end", values=r)
-            self._count_label.config(text=f"{len(rows)} user(s)")
+            self._count_label.config(text=f"{len(rows)} user(s) registered")
         except Exception:
             pass
 
@@ -1793,14 +1609,11 @@ class UserManagementPage(Page):
             if not new_name:
                 err_lbl.config(text="Name cannot be empty.")
                 return
-            if not any(c.isalpha() for c in new_name):
-                err_lbl.config(text="Name must contain at least one letter.")
+            if new_name.isdigit():
+                err_lbl.config(text="Name must be a real name, not a number.")
                 return
             try:
                 with sqlite3.connect(self._db) as conn:
-                    if conn.execute("SELECT user_id FROM users WHERE LOWER(user_name) = LOWER(?) AND user_id != ?", (new_name, uid)).fetchone():
-                        messagebox.showwarning("Duplicate Name", "This username already exists. Please add an initial or last name.")
-                        return
                     conn.execute(
                         "UPDATE users SET user_name=?, school=?, place=? WHERE user_id=?",
                         (new_name, new_school, new_place, uid))
@@ -1871,8 +1684,8 @@ class UserManagementPage(Page):
                         if not uid_s.isdigit():
                             errors.append(f"Bad ID: {uid_s!r}")
                             continue
-                        if not new_name or not any(c.isalpha() for c in new_name):
-                            errors.append(f"Skipped invalid name for ID {uid_s}")
+                        if not new_name or new_name.isdigit():
+                            errors.append(f"Skipped numeric name for ID {uid_s}")
                             continue
                         conn.execute("UPDATE users SET user_name=? WHERE user_id=?",
                                      (new_name, int(uid_s)))
@@ -2112,13 +1925,14 @@ class InventoryApp(tk.Tk):
 
         theme_frame = tk.Frame(self._topbar, bg=t["sidebar_bg"])
         theme_frame.pack(side="right", padx=12)
+        tk.Label(theme_frame, text="Theme:", bg=t["sidebar_bg"],
+                 fg=t["sidebar_fg"], font=("Arial", 9)).pack(side="left")
         self._theme_var = tk.StringVar(value="AIAT")
-        self._theme_icon = tk.Label(theme_frame, text="☀️", bg=t["sidebar_bg"], fg=t["sidebar_fg"], font=("Arial", 12))
-        self._theme_icon.pack(side="left", padx=4)
-        self._theme_switch = tk.Canvas(theme_frame, width=44, height=24, highlightthickness=0, bd=0, bg=t["sidebar_bg"], cursor="hand2")
-        self._theme_switch.pack(side="left")
-        self._theme_switch.bind("<Button-1>", lambda e: self._toggle_theme())
-        self._draw_switch(False)
+        self._theme_cb = ttk.Combobox(theme_frame, textvariable=self._theme_var,
+                                       values=list(THEMES.keys()),
+                                       state="readonly", width=8, font=("Arial", 9))
+        self._theme_cb.pack(side="left", padx=4)
+        self._theme_cb.bind("<<ComboboxSelected>>", self._on_theme_change)
 
         # ── Camera selector (admin topbar) ────────────────────
         cam_frame = tk.Frame(self._topbar, bg=t["sidebar_bg"])
@@ -2159,26 +1973,10 @@ class InventoryApp(tk.Tk):
                   and self._pages["home"]._mode is None else None)
         self.bind("<F2>", lambda e: self._show_page("login"))
 
-    def _toggle_theme(self):
-        current = self._theme_var.get()
-        if current in ("AIAT", "Light"):
-            new_theme = "Dark"
-            is_dark = True
-            icon = "🌙"
-        else:
-            new_theme = "Light"
-            is_dark = False
-            icon = "☀️"
-            
-        self._theme_var.set(new_theme)
-        self._draw_switch(is_dark)
-        self._theme_icon.config(text=icon)
-        
-        set_theme(new_theme)
+    def _on_theme_change(self, _event=None):
+        name = self._theme_var.get()
+        set_theme(name)
         t = get_theme()
-        self._theme_switch.config(bg=t["sidebar_bg"])
-        self._theme_icon.config(bg=t["sidebar_bg"], fg=t["sidebar_fg"])
-        
         # Topbar
         self._topbar.config(bg=t["sidebar_bg"])
         self._topbar_title.config(bg=t["sidebar_bg"], fg=t["logo_fg"])
@@ -2200,17 +1998,6 @@ class InventoryApp(tk.Tk):
             except Exception:
                 pass
 
-    def _draw_switch(self, is_dark):
-        self._theme_switch.delete("all")
-        bg_color = "#3b82f6" if is_dark else "#cbd5e1"
-        self._theme_switch.create_arc(2, 2, 22, 22, start=90, extent=180, fill=bg_color, outline=bg_color)
-        self._theme_switch.create_arc(22, 2, 42, 22, start=-90, extent=180, fill=bg_color, outline=bg_color)
-        self._theme_switch.create_rectangle(12, 2, 32, 22, fill=bg_color, outline=bg_color)
-        if is_dark:
-            self._theme_switch.create_oval(24, 4, 40, 20, fill="#ffffff", outline="")
-        else:
-            self._theme_switch.create_oval(4, 4, 20, 20, fill="#ffffff", outline="")
-
     def _on_camera_change(self, _event=None):
         global _active_camera_index
         selected_label = self._cam_var.get()
@@ -2218,22 +2005,16 @@ class InventoryApp(tk.Tk):
             if lbl == selected_label:
                 _active_camera_index = idx
                 break
-                
-        # Cleanly stop camera on any active page using proper lifecycle methods
-        # to ensure the UI loop doesn't get broken/frozen.
+        # Restart camera on any active page that uses it
+        for page in self._pages.values():
+            if hasattr(page, '_cam_thread') and page._cam_thread is not None:
+                page._cam_thread.stop()
+                page._cam_thread = None
+        # If currently on home or user_management, restart camera immediately
         if self._current is self._pages.get("home"):
-            page = self._pages["home"]
-            if page._running:
-                was_mode = page._mode
-                page._stop_camera()
-                if was_mode == "qr":
-                    page.after(400, page._start_qr)
-                # Note: if it was in 'face' mode, we let the user start over 
-                # to ensure security and state consistency.
+            self._pages["home"].on_show()
         elif self._current is self._pages.get("user_management"):
-            page = self._pages["user_management"]
-            if page._running:
-                page._restart_camera()
+            self._pages["user_management"]._restart_camera()
 
     def _add_page(self, name: str, page: Page):
         self._pages[name] = page
