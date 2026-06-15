@@ -510,6 +510,67 @@ class HomePage(Page):
         self._tree.configure(yscrollcommand=sb.set)
         self._tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
+        
+        self._tree.bind("<Double-1>", self._show_user_details)
+
+    def _show_user_details(self, event):
+        sel = self._tree.selection()
+        if not sel:
+            return
+        item = self._tree.item(sel[0])
+        user_id = item['values'][2]
+        if not user_id:
+            return
+            
+        try:
+            with sqlite3.connect(self._db) as conn:
+                row = conn.execute("SELECT user_name, school, place FROM users WHERE user_id=?", (user_id,)).fetchone()
+                if not row:
+                    messagebox.showinfo("User Not Found", f"No details found for User ID {user_id}")
+                    return
+                user_name, school, place = row
+                
+                photo_row = conn.execute("SELECT face_image FROM face_encodings WHERE user_id=? AND face_image IS NOT NULL LIMIT 1", (user_id,)).fetchone()
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to fetch user details:\n{e}")
+            return
+            
+        dlg = tk.Toplevel(self)
+        dlg.title("User Details")
+        try:
+            dlg.wait_visibility()
+            dlg.grab_set()
+        except tk.TclError:
+            pass
+        dlg.resizable(False, False)
+        
+        tk.Label(dlg, text="User Details", font=("Arial", 14, "bold"), pady=10).pack()
+        info_frame = tk.Frame(dlg, padx=20, pady=10)
+        info_frame.pack(fill="both", expand=True)
+        
+        if photo_row and photo_row[0]:
+            import io
+            try:
+                pil_img = Image.open(io.BytesIO(photo_row[0])).resize((120, 120))
+                photo = ImageTk.PhotoImage(pil_img)
+                lbl_img = tk.Label(info_frame, image=photo, relief=tk.RIDGE, bd=2)
+                lbl_img.image = photo
+                lbl_img.grid(row=0, column=0, rowspan=4, padx=(0, 20))
+            except Exception:
+                tk.Label(info_frame, text="[Photo Error]", width=15, height=7, bg="#eee", relief=tk.RIDGE).grid(row=0, column=0, rowspan=4, padx=(0, 20))
+        else:
+            tk.Label(info_frame, text="[No Photo]", width=15, height=7, bg="#eee", relief=tk.RIDGE).grid(row=0, column=0, rowspan=4, padx=(0, 20))
+            
+        tk.Label(info_frame, text="ID:", font=("Arial", 11, "bold")).grid(row=0, column=1, sticky="e", pady=2)
+        tk.Label(info_frame, text=f"{user_id}", font=("Arial", 11)).grid(row=0, column=2, sticky="w", pady=2)
+        tk.Label(info_frame, text="Name:", font=("Arial", 11, "bold")).grid(row=1, column=1, sticky="e", pady=2)
+        tk.Label(info_frame, text=f"{user_name}", font=("Arial", 11)).grid(row=1, column=2, sticky="w", pady=2)
+        tk.Label(info_frame, text="School:", font=("Arial", 11, "bold")).grid(row=2, column=1, sticky="e", pady=2)
+        tk.Label(info_frame, text=f"{school or '—'}", font=("Arial", 11)).grid(row=2, column=2, sticky="w", pady=2)
+        tk.Label(info_frame, text="Place:", font=("Arial", 11, "bold")).grid(row=3, column=1, sticky="e", pady=2)
+        tk.Label(info_frame, text=f"{place or '—'}", font=("Arial", 11)).grid(row=3, column=2, sticky="w", pady=2)
+        
+        tk.Button(dlg, text="Close", command=dlg.destroy, width=10).pack(pady=(0, 15))
 
     # ── public ──
 
@@ -831,7 +892,11 @@ class HomePage(Page):
 
         dlg = tk.Toplevel(self)
         dlg.title("Unregistered User")
-        dlg.grab_set()
+        try:
+            dlg.wait_visibility()
+            dlg.grab_set()
+        except tk.TclError:
+            pass
         dlg.resizable(False, False)
 
         # Warning icon row
@@ -1030,6 +1095,67 @@ class AdminHistoryPage(Page):
         self._tree.configure(yscrollcommand=sb.set)
         self._tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
+        
+        self._tree.bind("<Double-1>", self._show_user_details)
+
+    def _show_user_details(self, event):
+        sel = self._tree.selection()
+        if not sel:
+            return
+        item = self._tree.item(sel[0])
+        user_id = item['values'][4]
+        if not user_id:
+            return
+            
+        try:
+            with sqlite3.connect(self._db) as conn:
+                row = conn.execute("SELECT user_name, school, place FROM users WHERE user_id=?", (user_id,)).fetchone()
+                if not row:
+                    messagebox.showinfo("User Not Found", f"No details found for User ID {user_id}")
+                    return
+                user_name, school, place = row
+                
+                photo_row = conn.execute("SELECT face_image FROM face_encodings WHERE user_id=? AND face_image IS NOT NULL LIMIT 1", (user_id,)).fetchone()
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to fetch user details:\n{e}")
+            return
+            
+        dlg = tk.Toplevel(self)
+        dlg.title("User Details")
+        try:
+            dlg.wait_visibility()
+            dlg.grab_set()
+        except tk.TclError:
+            pass
+        dlg.resizable(False, False)
+        
+        tk.Label(dlg, text="User Details", font=("Arial", 14, "bold"), pady=10).pack()
+        info_frame = tk.Frame(dlg, padx=20, pady=10)
+        info_frame.pack(fill="both", expand=True)
+        
+        if photo_row and photo_row[0]:
+            import io
+            try:
+                pil_img = Image.open(io.BytesIO(photo_row[0])).resize((120, 120))
+                photo = ImageTk.PhotoImage(pil_img)
+                lbl_img = tk.Label(info_frame, image=photo, relief=tk.RIDGE, bd=2)
+                lbl_img.image = photo
+                lbl_img.grid(row=0, column=0, rowspan=4, padx=(0, 20))
+            except Exception:
+                tk.Label(info_frame, text="[Photo Error]", width=15, height=7, bg="#eee", relief=tk.RIDGE).grid(row=0, column=0, rowspan=4, padx=(0, 20))
+        else:
+            tk.Label(info_frame, text="[No Photo]", width=15, height=7, bg="#eee", relief=tk.RIDGE).grid(row=0, column=0, rowspan=4, padx=(0, 20))
+            
+        tk.Label(info_frame, text="ID:", font=("Arial", 11, "bold")).grid(row=0, column=1, sticky="e", pady=2)
+        tk.Label(info_frame, text=f"{user_id}", font=("Arial", 11)).grid(row=0, column=2, sticky="w", pady=2)
+        tk.Label(info_frame, text="Name:", font=("Arial", 11, "bold")).grid(row=1, column=1, sticky="e", pady=2)
+        tk.Label(info_frame, text=f"{user_name}", font=("Arial", 11)).grid(row=1, column=2, sticky="w", pady=2)
+        tk.Label(info_frame, text="School:", font=("Arial", 11, "bold")).grid(row=2, column=1, sticky="e", pady=2)
+        tk.Label(info_frame, text=f"{school or '—'}", font=("Arial", 11)).grid(row=2, column=2, sticky="w", pady=2)
+        tk.Label(info_frame, text="Place:", font=("Arial", 11, "bold")).grid(row=3, column=1, sticky="e", pady=2)
+        tk.Label(info_frame, text=f"{place or '—'}", font=("Arial", 11)).grid(row=3, column=2, sticky="w", pady=2)
+        
+        tk.Button(dlg, text="Close", command=dlg.destroy, width=10).pack(pady=(0, 15))
 
     def on_show(self):
         self._refresh()
@@ -1540,7 +1666,11 @@ class UserManagementPage(Page):
 
         dlg = tk.Toplevel(self)
         dlg.title("Possible Duplicate Detected")
-        dlg.grab_set()
+        try:
+            dlg.wait_visibility()
+            dlg.grab_set()
+        except tk.TclError:
+            pass
         dlg.resizable(False, False)
 
         tk.Label(dlg, text="⚠  Possible Duplicate Face",
@@ -1739,7 +1869,11 @@ class UserManagementPage(Page):
 
         dlg = tk.Toplevel(self)
         dlg.title(f"Edit User — ID {uid}")
-        dlg.grab_set()
+        try:
+            dlg.wait_visibility()
+            dlg.grab_set()
+        except tk.TclError:
+            pass
         dlg.resizable(False, False)
 
         tk.Label(dlg, text=f"Editing User ID: {uid}", font=("Arial", 13, "bold"),
@@ -1833,7 +1967,11 @@ class UserManagementPage(Page):
         # Show dialog with a Text widget for multi-line input
         dlg = tk.Toplevel(self)
         dlg.title("Bulk Rename Users")
-        dlg.grab_set()
+        try:
+            dlg.wait_visibility()
+            dlg.grab_set()
+        except tk.TclError:
+            pass
         dlg.resizable(False, False)
         tk.Label(dlg, text=instructions, justify="left", font=("Arial", 10),
                  padx=12, pady=8).pack(anchor="w")

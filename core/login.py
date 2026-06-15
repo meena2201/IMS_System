@@ -69,7 +69,11 @@ def open_login_page(window, open_admin_window_callback):
     
     login_page.bind("<Return>", lambda event: verify_login(username_entry, password_entry, login_page, open_admin_window_callback))
 
-    login_page.grab_set()
+    try:
+        login_page.wait_visibility()
+        login_page.grab_set()
+    except tk.TclError:
+        pass
     login_page.focus_force()
     # Ensure the dialog stays above the parent while open
     try:

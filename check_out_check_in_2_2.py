@@ -839,7 +839,11 @@ def open_login_page():
     tk.Button(login_page, text="Login", command=lambda: verify_login(username_entry, password_entry, login_page)).pack(pady=10)
     login_page.bind("<Return>", lambda event: verify_login(username_entry, password_entry, login_page))
 
-    login_page.grab_set()  # Ensures no interaction with the main window until login page is closed
+    try:
+        login_page.wait_visibility()
+        login_page.grab_set()  # Ensures no interaction with the main window until login page is closed
+    except tk.TclError:
+        pass
     window.wait_window(login_page)
 
 # --- Verify Login ---
