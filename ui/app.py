@@ -2165,7 +2165,11 @@ class ProductManagerPage(Page):
         
         dlg = tk.Toplevel(self)
         dlg.title(pid)
-        dlg.grab_set()
+        try:
+            dlg.wait_visibility()
+            dlg.grab_set()
+        except tk.TclError:
+            pass
         dlg.resizable(False, False)
         
         tk.Label(dlg, text="Product Details", font=("Arial", 14, "bold")).pack(pady=10)

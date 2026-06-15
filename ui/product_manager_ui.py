@@ -152,7 +152,11 @@ def setup_tab3(tab3, db_file='DB_FILE'):
         
         dlg = tk.Toplevel(tab3)
         dlg.title(product_id)
-        dlg.grab_set()
+        try:
+            dlg.wait_visibility()
+            dlg.grab_set()
+        except tk.TclError:
+            pass
         dlg.resizable(False, False)
         
         tk.Label(dlg, text="Product Details", font=("Arial", 14, "bold")).pack(pady=10)
