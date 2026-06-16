@@ -131,15 +131,125 @@ def setup_tab3(tab3, db_file='DB_FILE'):
         else:
             status_label.config(text="Please select an item to generate QR Code.", fg="red")
 
+    def generate_bulk_qr():
+        """Generate a printable A4 PDF containing all listed QR codes."""
+        items = tree_pm.selection()
+        if not items:
+            items = tree_pm.get_children()
+            
+        if not items:
+            status_label.config(text="No items listed to generate.", fg="red")
+            return
+        
+        bulk_qr_button.config(state=tk.DISABLED)
+        status_label.config(text="Generating PDF... please wait.", fg="#2980b9")
+        
+        item_data = []
+        for item_id in items:
+            values = tree_pm.item(item_id)["values"]
+            item_data.append({'pid': str(values[0]), 'pname': str(values[1])})
+        
+        import threading
+
+        def _pdf_worker_done(pdf_path, error_msg):
+            bulk_qr_button.config(state=tk.NORMAL)
+            if error_msg:
+                status_label.config(text=f"Error: {error_msg}", fg="red")
+            elif pdf_path:
+                status_label.config(text=f"Bulk PDF saved to {pdf_path}", fg="green")
+
+        def _pdf_worker(items_to_process):
+            try:
+                import os, time
+                from PIL import Image, ImageFont, ImageDraw
+                import qrcode
+                
+                A4_W, A4_H = 2480, 3508
+                MARGIN_X, MARGIN_Y = 150, 150
+                COLS, ROWS = 4, 6
+                CELL_W = (A4_W - 2 * MARGIN_X) // COLS
+                CELL_H = (A4_H - 2 * MARGIN_Y) // ROWS
+                
+                pages = []
+                current_page = None
+                x_idx, y_idx = 0, 0
+                
+                for item in items_to_process:
+                    pid, pname = item['pid'], item['pname']
+                    
+                    if current_page is None:
+                        current_page = Image.new("RGB", (A4_W, A4_H), "white")
+                        pages.append(current_page)
+                        x_idx, y_idx = 0, 0
+                        
+                    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=12, border=2)
+                    qr.add_data(pid)
+                    qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+                    
+                    try:
+                        font = ImageFont.truetype("calibri.ttf", 36)
+                        font_small = ImageFont.truetype("calibri.ttf", 24)
+                    except Exception:
+                        font, font_small = ImageFont.load_default(), ImageFont.load_default()
+                        
+                    d = ImageDraw.Draw(qr_img)
+                    tb_id = d.textbbox((0, 0), pid, font=font)
+                    tw_id, th_id = tb_id[2]-tb_id[0], tb_id[3]-tb_id[1]
+                    
+                    short_name = pname[:20] + "..." if len(pname) > 20 else pname
+                    tb_name = d.textbbox((0, 0), short_name, font=font_small)
+                    tw_name, th_name = tb_name[2]-tb_name[0], tb_name[3]-tb_name[1]
+                    
+                    qw, qh = qr_img.size
+                    cell_h, cell_w = qh + th_id + th_name + 30, max(qw, tw_id, tw_name)
+                    
+                    cell_img = Image.new("RGB", (cell_w, cell_h), "white")
+                    cell_img.paste(qr_img, ((cell_w - qw)//2, 0))
+                    
+                    draw_cell = ImageDraw.Draw(cell_img)
+                    draw_cell.text(((cell_w - tw_id)//2, qh + 5), pid, font=font, fill="black")
+                    draw_cell.text(((cell_w - tw_name)//2, qh + th_id + 15), short_name, font=font_small, fill="#555555")
+                    
+                    paste_x = int(MARGIN_X + x_idx * CELL_W + (CELL_W - cell_w) / 2)
+                    paste_y = int(MARGIN_Y + y_idx * CELL_H + (CELL_H - cell_h) / 2)
+                    
+                    ImageDraw.Draw(current_page).rectangle([MARGIN_X + x_idx * CELL_W, MARGIN_Y + y_idx * CELL_H, MARGIN_X + (x_idx+1) * CELL_W, MARGIN_Y + (y_idx+1) * CELL_H], outline="#dddddd", width=2)
+                    current_page.paste(cell_img, (paste_x, paste_y))
+                    
+                    x_idx += 1
+                    if x_idx >= COLS:
+                        x_idx, y_idx = 0, y_idx + 1
+                        if y_idx >= ROWS:
+                            y_idx, current_page = 0, None
+                            
+                if pages:
+                    os.makedirs("QR_codes", exist_ok=True)
+                    pdf_path = os.path.join("QR_codes", f"Bulk_QRs_{time.strftime('%Y%m%d_%H%M%S')}.pdf")
+                    pages[0].save(pdf_path, "PDF", resolution=300.0, save_all=True, append_images=pages[1:])
+                    
+                    import sys, subprocess
+                    if sys.platform == "win32": os.startfile(pdf_path)
+                    elif sys.platform == "darwin": subprocess.call(["open", pdf_path])
+                    else:
+                        try: subprocess.call(["open", pdf_path])
+                        except: pass
+                    tab3.after(0, _pdf_worker_done, pdf_path, None)
+                else:
+                    tab3.after(0, _pdf_worker_done, None, "No items to generate a PDF.")
+            except Exception as e:
+                tab3.after(0, _pdf_worker_done, None, str(e))
+
+        threading.Thread(target=_pdf_worker, args=(item_data,), daemon=True).start()
+
     def on_item_select(event):
         """Handle item selection in the tree view."""
-        selected_item = tree_pm.selection()
-        if selected_item:
-            product_name = tree_pm.item(selected_item)['values'][1]
-            entry_pm.delete(0, tk.END)
+        selected_items = tree_pm.selection()
+        entry_pm.delete(0, tk.END)
+        if len(selected_items) == 1:
+            product_name = tree_pm.item(selected_items[0])['values'][1]
             entry_pm.insert(0, product_name)
-        else:
-            entry_pm.delete(0, tk.END)
+        elif len(selected_items) > 1:
+            entry_pm.insert(0, f"[{len(selected_items)} items selected]")
 
     def on_item_double_click(event):
         selected_item = tree_pm.selection()
@@ -287,7 +397,7 @@ def setup_tab3(tab3, db_file='DB_FILE'):
     tree_frame.pack(fill="both", expand=True)
 
     columns = ("Product ID", "Product Name")
-    tree_pm = ttk.Treeview(tree_frame, columns=columns, show="headings")
+    tree_pm = ttk.Treeview(tree_frame, columns=columns, show="headings", selectmode="extended")
     tree_pm.heading("Product ID", text="Product ID")
     tree_pm.heading("Product Name", text="Product Name")
 
@@ -310,6 +420,9 @@ def setup_tab3(tab3, db_file='DB_FILE'):
     qr_button = tk.Button(bottom_frame, text="Generate QR Code", width=20, command=generate_qr)
     qr_button.pack(side="left", padx=20)
 
+    bulk_qr_button = tk.Button(bottom_frame, text="Bulk Print Listed", width=20, command=generate_bulk_qr)
+    bulk_qr_button.pack(side="left", padx=10)
+
     status_label = tk.Label(frame, text="", fg="red")
     status_label.pack(pady=10)
 
@@ -318,39 +431,13 @@ def setup_tab3(tab3, db_file='DB_FILE'):
     tree_pm.bind('<<TreeviewSelect>>', on_item_select)
     tree_pm.bind('<Double-1>', on_item_double_click)
 
-    # Escape key handling
-    def clear_entry_focus(event=None):
-        entry_pm.delete(0, tk.END)
-        entry_pm.selection_clear()
-        frame.focus_set()
-        status_label.config(text="")
-
-    def clear_search_focus(event=None):
-        search_entry.delete(0, tk.END)
-        frame.focus_set()
-        show_items_pm()
-        status_label.config(text="")
-
-    def handle_esc(event):
-        if entry_pm == frame.focus_get():
-            clear_entry_focus()
-        elif search_entry == frame.focus_get():
-            clear_search_focus()
-        else:
-            status_label.config(text="")
-            show_items_pm()
-
-    frame.bind_all("<Escape>", handle_esc)
-
     def on_click(event):
         widget = event.widget
-        if widget not in (entry_pm, search_entry, add_button, search_button, refresh_button, qr_button, size_combobox):
+        if widget not in (entry_pm, search_entry, add_button, search_button, refresh_button, qr_button, bulk_qr_button, size_combobox, tree_pm, scrollbar):
             entry_pm.selection_clear()
             search_entry.selection_clear()
             frame.focus_set()
             status_label.config(text="")
-            show_items_pm()
 
     frame.bind("<Button-1>", on_click)
-    tree_pm.bind("<Button-1>", on_click)
     tab3.bind("<Button-1>", on_click)

@@ -2049,6 +2049,7 @@ class ProductManagerPage(Page):
     def __init__(self, parent, db_file, **kw):
         super().__init__(parent, **kw)
         self._db = db_file
+        self._checked_items = {}
 
         frame = tk.Frame(self, padx=16, pady=10)
         frame.pack(fill="both", expand=True)
@@ -2077,9 +2078,12 @@ class ProductManagerPage(Page):
         # tree
         tf = tk.Frame(frame)
         tf.pack(fill="both", expand=True)
-        self._tree = ttk.Treeview(tf, columns=("Product ID", "Product Name"), show="headings")
+        self._tree = ttk.Treeview(tf, columns=("Select", "Product ID", "Product Name"), show="headings")
+        self._tree.tag_configure("checked", background="#d5f5e3")
+        self._tree.heading("Select",       text="Select")
         self._tree.heading("Product ID",   text="Product ID")
         self._tree.heading("Product Name", text="Product Name")
+        self._tree.column("Select",       width=60, anchor="center")
         self._tree.column("Product ID",   width=130, anchor="center")
         self._tree.column("Product Name", width=260, anchor="center")
         sb = ttk.Scrollbar(tf, orient="vertical", command=self._tree.yview)
@@ -2088,6 +2092,7 @@ class ProductManagerPage(Page):
         sb.pack(side="right", fill="y")
         self._tree.bind("<<TreeviewSelect>>", self._on_select)
         self._tree.bind("<Double-1>", self._on_double_click)
+        self._tree.bind("<Button-1>", self._on_tree_click)
 
         # QR row
         qf = tk.Frame(frame)
@@ -2104,6 +2109,10 @@ class ProductManagerPage(Page):
         self._size_cb.pack(side="left", padx=6)
         tk.Button(qf, text="📄 Generate QR", bg="#9b59b6", fg="white", relief=tk.FLAT,
                   command=self._generate_qr).pack(side="left", padx=6)
+
+        self._bulk_print_btn = tk.Button(qf, text="📑 Bulk Print Listed", bg="#2980b9", fg="white", relief=tk.FLAT,
+                                         command=self._generate_bulk_qr)
+        self._bulk_print_btn.pack(side="left", padx=6)
 
         self._status = tk.Label(frame, text="", font=("Arial", 10))
         self._status.pack()
@@ -2138,6 +2147,7 @@ class ProductManagerPage(Page):
     def _load_items(self, term=None):
         for i in self._tree.get_children():
             self._tree.delete(i)
+        self._checked_items.clear()
         if term:
             self._cursor.execute(
                 "SELECT 'slof_'||id, product_name FROM items WHERE product_name LIKE ? OR ('slof_'||id) LIKE ?",
@@ -2145,14 +2155,38 @@ class ProductManagerPage(Page):
         else:
             self._cursor.execute("SELECT 'slof_'||id, product_name FROM items")
         for row in self._cursor.fetchall():
-            self._tree.insert("", tk.END, values=row)
+            item_id = self._tree.insert("", tk.END, values=("☐", row[0], row[1]))
+            self._checked_items[item_id] = False
 
     def _on_select(self, _event=None):
         sel = self._tree.selection()
-        if sel:
-            name = self._tree.item(sel[0])["values"][1]
-            self._entry.delete(0, tk.END)
+        self._entry.delete(0, tk.END)
+        if len(sel) == 1:
+            name = self._tree.item(sel[0])["values"][2]
             self._entry.insert(0, name)
+        elif len(sel) > 1:
+            self._entry.insert(0, f"[{len(sel)} items selected]")
+
+    def _on_tree_click(self, event):
+        region = self._tree.identify_region(event.x, event.y)
+        if region != "cell":
+            return
+
+        column = self._tree.identify_column(event.x)
+        if column == "#1":  # "Select" column
+            item_id = self._tree.identify_row(event.y)
+            if not item_id:
+                return
+            is_checked = not self._checked_items.get(item_id, False)
+            self._checked_items[item_id] = is_checked
+            current_values = self._tree.item(item_id, "values")
+            new_char = "✅" if is_checked else "☐"
+            self._tree.item(item_id, values=(new_char, current_values[1], current_values[2]))
+            
+            if is_checked:
+                self._tree.item(item_id, tags=("checked",))
+            else:
+                self._tree.item(item_id, tags=())
 
     def _on_double_click(self, event):
         sel = self._tree.selection()
@@ -2160,8 +2194,8 @@ class ProductManagerPage(Page):
             return
         
         item = self._tree.item(sel[0])
-        pid = item["values"][0]
-        pname = item["values"][1]
+        pid = item["values"][1]
+        pname = item["values"][2]
         
         dlg = tk.Toplevel(self)
         dlg.title(pid)
@@ -2262,7 +2296,7 @@ class ProductManagerPage(Page):
         if not sel:
             self._status.config(text="Select a product first.", fg="red")
             return
-        pid = str(self._tree.item(sel[0])["values"][0])
+        pid = str(self._tree.item(sel[0])["values"][1])
         size_mm = int(self._size_cb.get())
         box_size = max(1, self._math.ceil(size_mm / 0.264583) // 21)
         qr = self._qrcode.QRCode(version=1,
@@ -2288,6 +2322,113 @@ class ProductManagerPage(Page):
         new_img.show()
         self._status.config(text=f"QR saved to {path}", fg="#27ae60")
 
+    def _generate_bulk_qr(self):
+        items = [item_id for item_id, checked in self._checked_items.items() if checked]
+
+        if not items:
+            self._status.config(text="No items checked to generate.", fg="red")
+            return
+            
+        if not messagebox.askyesno("Confirm Bulk Print", f"Are you sure you want to print QR codes for {len(items)} checked item(s)?"):
+            self._status.config(text="Bulk print cancelled.", fg="#e67e22")
+            return
+
+        self._bulk_print_btn.config(state=tk.DISABLED)
+        self._status.config(text="Generating PDF... please wait.", fg="#2980b9")
+        
+        item_data = []
+        for item_id in items:
+            values = self._tree.item(item_id)["values"]
+            item_data.append({'pid': str(values[1]), 'pname': str(values[2])})
+            
+        threading.Thread(target=self._pdf_worker, args=(item_data,), daemon=True).start()
+
+    def _pdf_worker(self, item_data):
+        try:
+            import os, time
+            from PIL import Image
+            
+            A4_W, A4_H = 2480, 3508
+            MARGIN_X, MARGIN_Y = 150, 150
+            COLS, ROWS = 4, 6
+            CELL_W = (A4_W - 2 * MARGIN_X) // COLS
+            CELL_H = (A4_H - 2 * MARGIN_Y) // ROWS
+            
+            pages = []
+            current_page = None
+            x_idx, y_idx = 0, 0
+            
+            for item in item_data:
+                pid, pname = item['pid'], item['pname']
+                
+                if current_page is None:
+                    current_page = Image.new("RGB", (A4_W, A4_H), "white")
+                    pages.append(current_page)
+                    x_idx, y_idx = 0, 0
+                    
+                qr = self._qrcode.QRCode(version=1, error_correction=self._qrcode.constants.ERROR_CORRECT_L, box_size=12, border=2)
+                qr.add_data(pid)
+                qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+                
+                try:
+                    font = self._ImageFont.truetype("calibri.ttf", 36)
+                    font_small = self._ImageFont.truetype("calibri.ttf", 24)
+                except Exception:
+                    font, font_small = self._ImageFont.load_default(), self._ImageFont.load_default()
+                    
+                d = self._ImageDraw.Draw(qr_img)
+                tb_id = d.textbbox((0, 0), pid, font=font)
+                tw_id, th_id = tb_id[2]-tb_id[0], tb_id[3]-tb_id[1]
+                
+                short_name = pname[:20] + "..." if len(pname) > 20 else pname
+                tb_name = d.textbbox((0, 0), short_name, font=font_small)
+                tw_name, th_name = tb_name[2]-tb_name[0], tb_name[3]-tb_name[1]
+                
+                qw, qh = qr_img.size
+                cell_h, cell_w = qh + th_id + th_name + 30, max(qw, tw_id, tw_name)
+                
+                cell_img = Image.new("RGB", (cell_w, cell_h), "white")
+                cell_img.paste(qr_img, ((cell_w - qw)//2, 0))
+                
+                draw_cell = self._ImageDraw.Draw(cell_img)
+                draw_cell.text(((cell_w - tw_id)//2, qh + 5), pid, font=font, fill="black")
+                draw_cell.text(((cell_w - tw_name)//2, qh + th_id + 15), short_name, font=font_small, fill="#555555")
+                
+                paste_x = int(MARGIN_X + x_idx * CELL_W + (CELL_W - cell_w) / 2)
+                paste_y = int(MARGIN_Y + y_idx * CELL_H + (CELL_H - cell_h) / 2)
+                
+                self._ImageDraw.Draw(current_page).rectangle([MARGIN_X + x_idx * CELL_W, MARGIN_Y + y_idx * CELL_H, MARGIN_X + (x_idx+1) * CELL_W, MARGIN_Y + (y_idx+1) * CELL_H], outline="#dddddd", width=2)
+                current_page.paste(cell_img, (paste_x, paste_y))
+                
+                x_idx += 1
+                if x_idx >= COLS:
+                    x_idx, y_idx = 0, y_idx + 1
+                    if y_idx >= ROWS:
+                        y_idx, current_page = 0, None
+                        
+            if pages:
+                os.makedirs("QR_codes", exist_ok=True)
+                pdf_path = os.path.join("QR_codes", f"Bulk_QRs_{time.strftime('%Y%m%d_%H%M%S')}.pdf")
+                pages[0].save(pdf_path, "PDF", resolution=300.0, save_all=True, append_images=pages[1:])
+                
+                import sys, subprocess
+                if sys.platform == "win32": os.startfile(pdf_path)
+                elif sys.platform == "darwin": subprocess.call(["open", pdf_path])
+                else:
+                    try: subprocess.call(["xdg-open", pdf_path])
+                    except: pass
+                self.after(0, self._pdf_worker_done, pdf_path, None)
+            else:
+                self.after(0, self._pdf_worker_done, None, "No items to generate a PDF.")
+        except Exception as e:
+            self.after(0, self._pdf_worker_done, None, str(e))
+
+    def _pdf_worker_done(self, pdf_path, error_msg):
+        self._bulk_print_btn.config(state=tk.NORMAL)
+        if error_msg:
+            self._status.config(text=f"Error: {error_msg}", fg="red")
+        elif pdf_path:
+            self._status.config(text=f"Bulk PDF saved to {pdf_path}", fg="#27ae60")
 
 # ─── Main application ─────────────────────────────────────────────────────────
 
