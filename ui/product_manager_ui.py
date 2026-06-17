@@ -165,11 +165,12 @@ def setup_tab3(tab3, db_file='DB_FILE'):
                 import qrcode
                 
                 A4_W, A4_H = 2480, 3508
-                CELL_W, CELL_H = 380, 480
-                COLS = A4_W // CELL_W
-                ROWS = A4_H // CELL_H
-                MARGIN_X = (A4_W - COLS * CELL_W) // 2
-                MARGIN_Y = (A4_H - ROWS * CELL_H) // 2
+                CELL_W, CELL_H = 370, 460
+                GAP = 24  # approx 2mm safety gap
+                COLS = (A4_W + GAP) // (CELL_W + GAP)
+                ROWS = (A4_H + GAP) // (CELL_H + GAP)
+                MARGIN_X = (A4_W - (COLS * CELL_W + (COLS - 1) * GAP)) // 2
+                MARGIN_Y = (A4_H - (ROWS * CELL_H + (ROWS - 1) * GAP)) // 2
                 
                 pages = []
                 current_page = None
@@ -213,8 +214,8 @@ def setup_tab3(tab3, db_file='DB_FILE'):
                     draw_cell.text(((CELL_W - tw_id)//2, pad_top + qh + 10), pid, font=font, fill="black")
                     draw_cell.text(((CELL_W - tw_name)//2, pad_top + qh + th_id + 25), short_name, font=font_small, fill="#555555")
                     
-                    paste_x = MARGIN_X + x_idx * CELL_W
-                    paste_y = MARGIN_Y + y_idx * CELL_H
+                    paste_x = MARGIN_X + x_idx * (CELL_W + GAP)
+                    paste_y = MARGIN_Y + y_idx * (CELL_H + GAP)
                     
                     current_page.paste(cell_img, (paste_x, paste_y))
                     
