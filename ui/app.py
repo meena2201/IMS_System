@@ -2366,7 +2366,7 @@ class ProductManagerPage(Page):
                     pages.append(current_page)
                     x_idx, y_idx = 0, 0
                     
-                qr = self._qrcode.QRCode(version=1, error_correction=self._qrcode.constants.ERROR_CORRECT_L, box_size=20, border=1)
+                qr = self._qrcode.QRCode(version=1, error_correction=self._qrcode.constants.ERROR_CORRECT_L, box_size=16, border=1)
                 qr.add_data(pid)
                 qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
                 
@@ -2385,19 +2385,21 @@ class ProductManagerPage(Page):
                 tw_name, th_name = tb_name[2]-tb_name[0], tb_name[3]-tb_name[1]
                 
                 qw, qh = qr_img.size
-                cell_h, cell_w = qh + th_id + th_name + 30, max(qw, tw_id, tw_name)
+                pad_x, pad_y = 40, 20
+                cell_w = max(qw, tw_id, tw_name) + pad_x * 2
+                cell_h = qh + th_id + th_name + 30 + pad_y * 2
                 
                 cell_img = Image.new("RGB", (cell_w, cell_h), "white")
-                cell_img.paste(qr_img, ((cell_w - qw)//2, 0))
+                cell_img.paste(qr_img, ((cell_w - qw)//2, pad_y))
                 
                 draw_cell = self._ImageDraw.Draw(cell_img)
-                draw_cell.text(((cell_w - tw_id)//2, qh + 5), pid, font=font, fill="black")
-                draw_cell.text(((cell_w - tw_name)//2, qh + th_id + 15), short_name, font=font_small, fill="#555555")
+                draw_cell.text(((cell_w - tw_id)//2, pad_y + qh + 5), pid, font=font, fill="black")
+                draw_cell.text(((cell_w - tw_name)//2, pad_y + qh + th_id + 15), short_name, font=font_small, fill="#555555")
+                draw_cell.rectangle([0, 0, cell_w - 1, cell_h - 1], outline="black", width=1)
                 
                 paste_x = int(MARGIN_X + x_idx * CELL_W + (CELL_W - cell_w) / 2)
                 paste_y = int(MARGIN_Y + y_idx * CELL_H + (CELL_H - cell_h) / 2)
                 
-                self._ImageDraw.Draw(current_page).rectangle([MARGIN_X + x_idx * CELL_W, MARGIN_Y + y_idx * CELL_H, MARGIN_X + (x_idx+1) * CELL_W, MARGIN_Y + (y_idx+1) * CELL_H], outline="#000000", width=8)
                 current_page.paste(cell_img, (paste_x, paste_y))
                 
                 x_idx += 1
