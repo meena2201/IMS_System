@@ -2262,7 +2262,7 @@ class ProductManagerPage(Page):
             from PIL import Image, ImageFont, ImageDraw
             
             box_size = max(1, math.ceil(25 / 0.264583) // 21)
-            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=box_size, border=2)
+            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=box_size, border=1)
             qr.add_data(pid)
             qr.make(fit=True)
             img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
@@ -2301,7 +2301,7 @@ class ProductManagerPage(Page):
         box_size = max(1, self._math.ceil(size_mm / 0.264583) // 21)
         qr = self._qrcode.QRCode(version=1,
                                   error_correction=self._qrcode.constants.ERROR_CORRECT_L,
-                                  box_size=box_size, border=2)
+                                  box_size=box_size, border=1)
         qr.add_data(pid)
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
@@ -2366,7 +2366,7 @@ class ProductManagerPage(Page):
                     pages.append(current_page)
                     x_idx, y_idx = 0, 0
                     
-                qr = self._qrcode.QRCode(version=1, error_correction=self._qrcode.constants.ERROR_CORRECT_L, box_size=12, border=2)
+                qr = self._qrcode.QRCode(version=1, error_correction=self._qrcode.constants.ERROR_CORRECT_L, box_size=20, border=1)
                 qr.add_data(pid)
                 qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
                 

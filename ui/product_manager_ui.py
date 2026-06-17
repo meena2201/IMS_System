@@ -84,7 +84,7 @@ def setup_tab3(tab3, db_file='DB_FILE'):
                                 version=1,
                                 error_correction=qrcode.constants.ERROR_CORRECT_L,
                                 box_size=box_size,
-                                border=2
+                                border=1
                             )
                             qr.add_data(product_id)
                             qr.make(fit=True)
@@ -182,7 +182,7 @@ def setup_tab3(tab3, db_file='DB_FILE'):
                         pages.append(current_page)
                         x_idx, y_idx = 0, 0
                         
-                    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=12, border=2)
+                    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=20, border=1)
                     qr.add_data(pid)
                     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
                     
@@ -325,7 +325,7 @@ def setup_tab3(tab3, db_file='DB_FILE'):
             from PIL import Image, ImageFont, ImageDraw
             
             box_size = max(1, math.ceil(25 / 0.264583) // 21)
-            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=box_size, border=2)
+            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=box_size, border=1)
             qr.add_data(product_id)
             qr.make(fit=True)
             img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
