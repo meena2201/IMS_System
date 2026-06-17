@@ -2349,10 +2349,11 @@ class ProductManagerPage(Page):
             from PIL import Image
             
             A4_W, A4_H = 2480, 3508
-            MARGIN_X, MARGIN_Y = 150, 150
-            COLS, ROWS = 4, 6
-            CELL_W = (A4_W - 2 * MARGIN_X) // COLS
-            CELL_H = (A4_H - 2 * MARGIN_Y) // ROWS
+            CELL_W, CELL_H = 380, 480
+            COLS = A4_W // CELL_W
+            ROWS = A4_H // CELL_H
+            MARGIN_X = (A4_W - COLS * CELL_W) // 2
+            MARGIN_Y = (A4_H - ROWS * CELL_H) // 2
             
             pages = []
             current_page = None
@@ -2366,7 +2367,7 @@ class ProductManagerPage(Page):
                     pages.append(current_page)
                     x_idx, y_idx = 0, 0
                     
-                qr = self._qrcode.QRCode(version=1, error_correction=self._qrcode.constants.ERROR_CORRECT_L, box_size=16, border=1)
+                qr = self._qrcode.QRCode(version=1, error_correction=self._qrcode.constants.ERROR_CORRECT_L, box_size=14, border=1)
                 qr.add_data(pid)
                 qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
                 
@@ -2385,20 +2386,18 @@ class ProductManagerPage(Page):
                 tw_name, th_name = tb_name[2]-tb_name[0], tb_name[3]-tb_name[1]
                 
                 qw, qh = qr_img.size
-                pad_x, pad_y = 40, 20
-                cell_w = max(qw, tw_id, tw_name) + pad_x * 2
-                cell_h = qh + th_id + th_name + 30 + pad_y * 2
                 
-                cell_img = Image.new("RGB", (cell_w, cell_h), "white")
-                cell_img.paste(qr_img, ((cell_w - qw)//2, pad_y))
-                
+                cell_img = Image.new("RGB", (CELL_W, CELL_H), "white")
                 draw_cell = self._ImageDraw.Draw(cell_img)
-                draw_cell.text(((cell_w - tw_id)//2, pad_y + qh + 5), pid, font=font, fill="black")
-                draw_cell.text(((cell_w - tw_name)//2, pad_y + qh + th_id + 15), short_name, font=font_small, fill="#555555")
-                draw_cell.rectangle([0, 0, cell_w - 1, cell_h - 1], outline="black", width=1)
+                draw_cell.rectangle([0, 0, CELL_W - 1, CELL_H - 1], outline="black", width=1)
                 
-                paste_x = int(MARGIN_X + x_idx * CELL_W + (CELL_W - cell_w) / 2)
-                paste_y = int(MARGIN_Y + y_idx * CELL_H + (CELL_H - cell_h) / 2)
+                pad_top = 25
+                cell_img.paste(qr_img, ((CELL_W - qw)//2, pad_top))
+                draw_cell.text(((CELL_W - tw_id)//2, pad_top + qh + 10), pid, font=font, fill="black")
+                draw_cell.text(((CELL_W - tw_name)//2, pad_top + qh + th_id + 25), short_name, font=font_small, fill="#555555")
+                
+                paste_x = MARGIN_X + x_idx * CELL_W
+                paste_y = MARGIN_Y + y_idx * CELL_H
                 
                 current_page.paste(cell_img, (paste_x, paste_y))
                 
