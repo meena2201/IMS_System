@@ -213,7 +213,7 @@ def setup_tab3(tab3, db_file='DB_FILE'):
                     paste_x = int(MARGIN_X + x_idx * CELL_W + (CELL_W - cell_w) / 2)
                     paste_y = int(MARGIN_Y + y_idx * CELL_H + (CELL_H - cell_h) / 2)
                     
-                    ImageDraw.Draw(current_page).rectangle([MARGIN_X + x_idx * CELL_W, MARGIN_Y + y_idx * CELL_H, MARGIN_X + (x_idx+1) * CELL_W, MARGIN_Y + (y_idx+1) * CELL_H], outline="#dddddd", width=2)
+                    ImageDraw.Draw(current_page).rectangle([MARGIN_X + x_idx * CELL_W, MARGIN_Y + y_idx * CELL_H, MARGIN_X + (x_idx+1) * CELL_W, MARGIN_Y + (y_idx+1) * CELL_H], outline="#000000", width=2)
                     current_page.paste(cell_img, (paste_x, paste_y))
                     
                     x_idx += 1
